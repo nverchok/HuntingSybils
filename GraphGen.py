@@ -14,7 +14,7 @@ class GraphGen:
 	created per node by a particular simulation of a communication plan. """
 
 
-	def __init__(self, nodes_all, val_time, val_pos, val_rad, round_duration=2, syb_mal_mult=0.7, syb_syb_mult=0.7):
+	def __init__(self, nodes_all, val_time, val_pos, val_rad, round_duration=2, syb_mal_mult=0.6, syb_syb_mult=0.6):
 		""" Initialized a GraphGen object, storing the input parameters and also
 		immediately computing variables needed for subsequent algorithms. """
 		self.nodes_all = nodes_all
@@ -47,8 +47,8 @@ class GraphGen:
 		if bgn==end:
 			return
 		mid = (bgn+end)//2
-		incomplete_comm_plan[bgn:mid,depth] = self.keygen.genKey()
-		incomplete_comm_plan[mid:end,depth+1] = self.keygen.genKey()
+		incomplete_comm_plan[bgn:mid,depth] = self.keygen.genKeys(mid-bgn)
+		incomplete_comm_plan[mid:end,depth+1] = self.keygen.genKeys(end-mid)
 		if depth+2 < self.num_rounds:
 			if(mid-bgn > 1):
 				self.__recGenStates__(incomplete_comm_plan, depth+2, bgn, mid)
@@ -85,21 +85,26 @@ class GraphGen:
 		In every round, a node either listens or broadcasts its key. """
 		if self.num_nodes < 2:
 			return None, None, None
-		potential_conns = np.ndarray((self.num_nodes, self.num_rounds), dtype=object)
 		comm_plan = np.full((self.num_nodes, self.num_rounds), "listen")
 		key_to_idx = {}
 		self.keygen = KeyGen()
 		self.__recGenStates__(comm_plan, 0, 0, self.num_nodes)
 		np.random.shuffle(comm_plan)
-		for i in range(self.num_nodes):
-			for rnd in range(self.num_rounds):
+		potential_conns = np.ndarray((self.num_nodes, self.num_rounds), dtype=object)		
+		for rnd in range(self.num_rounds):
+			listener_set = []
+			bdcaster_set = []
+			for i in range(self.num_nodes):
 				potential_conns[i,rnd] = []
-				if comm_plan[i,rnd] != "listen":
-					key_to_idx[comm_plan[i,rnd]] = i
+				if comm_plan[i,rnd] == "listen":
+					listener_set += [i]
 				else:
-					for j in range(self.num_nodes):
-						if comm_plan[j,rnd] != "listen":
-							potential_conns[i,rnd] += [comm_plan[j,rnd]]
+					bdcaster_set += [i]
+			for i in listener_set:
+				for j in bdcaster_set:
+					bdcaster_key = comm_plan[j,rnd]
+					potential_conns[i,rnd] += [bdcaster_key]
+					key_to_idx[bdcaster_key] = j
 		return comm_plan, key_to_idx, potential_conns
 
 
@@ -128,19 +133,6 @@ class GraphGen:
 					conn_successful = self.__attemptConn__(listen_node, bdcast_node, rnd)
 					if conn_successful:
 						simulated_conns[i,rnd] += [comm_plan[j,rnd]]
-
-		# THIS IS A MUCH SLOWER RUNTIME (SQUARED, WHILE ABOVE IS HALF-SQUARED)
-		# for i in range(self.num_nodes):
-		# 	for rnd in range(self.num_rounds):
-		# 		simulated_conns[i,rnd] = []
-		# 		if comm_plan[i,rnd] == "listen":
-		# 			for j in range(self.num_nodes):
-		# 				if comm_plan[j,rnd] != "listen":
-		# 					listen_node = self.nodes[i]
-		# 					bdcast_node = self.nodes[j]
-		# 					conn_successful = self.__attemptConn__(listen_node, bdcast_node, rnd)
-		# 					if conn_successful:
-		# 						simulated_conns[i,rnd] += [comm_plan[j,rnd]]
 		return simulated_conns
 	
 	
@@ -151,18 +143,19 @@ class GraphGen:
 		if self.num_nodes < 2:
 			return None
 		node_edges = np.ndarray(self.num_nodes, dtype=object)
+		single_attempt_restr = set()
 		for i in range(self.num_nodes):
 			node_edges[i] = []
-			single_attempt_restr = set()
-			for rnd in range(self.num_rounds):
+		for rnd in range(self.num_rounds):
+			time = self.__getRoundTime__(rnd)
+			for i in range(self.num_nodes):
+				node_src = self.nodes[i]
 				node_potl_conns = {key_to_idx[key] for key in potential_conns[i,rnd]}
 				node_simu_conns = {key_to_idx[key] for key in simulated_conns[i,rnd]}
 				for j in node_potl_conns:
-					if j not in single_attempt_restr:
-						single_attempt_restr |= {j}
-						node_src = self.nodes[j]
-						node_dst = self.nodes[i]
-						time = self.__getRoundTime__(rnd)
+					if (i,j) not in single_attempt_restr:
+						single_attempt_restr |= {(i,j)}
+						node_dst = self.nodes[j]
 						successful = j in node_simu_conns
-						node_edges[i] += [Edge(node_src, node_dst, time, successful)]
+						node_edges[j] += [Edge(node_src, node_dst, time, successful)]
 		return node_edges

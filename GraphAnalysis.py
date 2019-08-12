@@ -1,10 +1,6 @@
 import numpy as np
 import scipy as sp
 
-
-
-
-
 class GraphAnalysis:
 	""" A collection of algorithms for Sybil detection that rely on the probabilistic
 	model for P2P connection success as a function of pairwise distance. """
@@ -88,7 +84,7 @@ class GraphAnalysis:
 		final_pvals = np.zeros(self.num_nodes)
 		while len(syb_idxs) < 1*self.num_nodes:
 			temp_pvals = self.__calcPvals__(ignored_node_idxs=syb_idxs)
-			min_pval = 1
+			min_pval = temp_pvals[0]
 			min_idx = 0
 			for i in range(self.num_nodes):
 				if i not in syb_idxs and temp_pvals[i] < min_pval:

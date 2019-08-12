@@ -2,10 +2,7 @@ import math
 import numpy as np
 import networkx as nx
 import sypy
-
-
-
-
+from threading import Lock
 
 class Node:
 	""" A node class containing an id and position data. """
@@ -56,17 +53,17 @@ class Node:
 		if reported_pos:
 			return self.pos[int(Node.loc_rate*(time//Node.loc_rate))]
 		elif time == int(time):
-			return self.pos[time]
+			return self.pos[int(time)]
 		else:
 			time_lower = int(time)
 			time_upper = int(time + 1)
-			a = time_upper - time
-			xl = self.pos[time_lower][0]
-			yl = self.pos[time_lower][1]
-			xu = self.pos[time_upper][0]
-			yu = self.pos[time_upper][1]
-			x_intp = a*x_lower + (1-a)*x_upper
-			y_intp = a*y_lower + (1-a)*y_upper
+			a = time - time_lower
+			x_lower = self.pos[time_lower][0]
+			y_lower = self.pos[time_lower][1]
+			x_upper = self.pos[time_upper][0]
+			y_upper = self.pos[time_upper][1]
+			x_intp = x_lower + a*(x_upper-x_lower)
+			y_intp = y_lower + a*(y_upper-y_lower)
 			return (x_intp, y_intp)
 
 
@@ -113,22 +110,23 @@ class KeyGen:
 
 	def __init__(self):
 		""" Initializes the object. """
-		self.unique_key = 0
+		self.lock = Lock()
+		self.unique_key = 10
 		self.key_length = 6
 	
 
-	def reset(self):
-		""" Resets the keyspace. """
-		self.unique_key = 0
-	
-
-	def genKey(self):
-		""" Generates a unique fixed-length string. """
-		unique_str = str(self.unique_key)
-		pad_length = self.key_length - len(unique_str) - 1
-		key = "k" + "0"*pad_length + unique_str
-		self.unique_key += 1
-		return key
+	def genKeys(self, num_keys):
+		""" Generates a unique fixed-length string). Synchronyzed. """
+		self.lock.acquire()
+		keys = []
+		for i in range(num_keys):
+			unique_str = str(self.unique_key)
+			pad_length = self.key_length - len(unique_str) - 1
+			key = "k" + "0"*pad_length + unique_str
+			self.unique_key += 1
+			keys += [key]
+		self.lock.release()
+		return keys
 
 
 
@@ -144,6 +142,10 @@ class Terrain:
 		self.width = width
 		self.height = height
 		self.restrictions = restrictions
+
+	
+	def addRestriction(self, rstr_data, color="#AAAAAA"):
+		self.restrictions += [(rstr_data, color)]
 
 
 
@@ -276,10 +278,12 @@ class Utils:
 		for i in range(num_nodes):
 			for edge in edge_lists[i]:
 				if edge.successful:
-					if (edge.node_dst.id,edge.node_src.id) in succ_edges:
-						bidir_edges += [(edge.node_dst.id,edge.node_src.id)]
+					src_idx = id_to_idx[edge.node_src.id]
+					dst_idx = id_to_idx[edge.node_dst.id]
+					if (dst_idx,src_idx) in succ_edges:
+						bidir_edges += [(dst_idx,src_idx)]
 					else:
-						succ_edges[(edge.node_src.id,edge.node_dst.id)] = True
+						succ_edges[(src_idx,dst_idx)] = True
 		nx_graph = nx.Graph()
 		nx_graph.add_nodes_from([i for i in range(num_nodes)])
 		nx_graph.add_edges_from(bidir_edges)
@@ -287,7 +291,7 @@ class Utils:
 		cc_nodes = cc_graph.nodes()
 		cc_edges = []
 		for edge in bidir_edges:
-			if id_to_idx[edge[0]] in cc_nodes and id_to_idx[edge[1]] in cc_nodes:
+			if edge[0] in cc_nodes and edge[1] in cc_nodes:
 				cc_edges += [edge]
 		nx_graph = nx.Graph()
 		nx_graph.add_nodes_from(cc_nodes)
@@ -297,9 +301,9 @@ class Utils:
 		for i in cc_nodes:
 			honest_edge_counts[i] = 0
 		for edge in cc_edges:
-			if nodes[id_to_idx[edge[0]]].type == "hon" and nodes[id_to_idx[edge[1]]].type == "hon":
-				honest_edge_counts[id_to_idx[edge[0]]] += 1
-				honest_edge_counts[id_to_idx[edge[1]]] += 1
+			if nodes[edge[0]].type == "hon" and nodes[edge[1]].type == "hon":
+				honest_edge_counts[edge[0]] += 1
+				honest_edge_counts[edge[1]] += 1
 		known_honests = [sorted(honest_edge_counts.items(), key=lambda kv: kv[1], reverse=True)[0][0]]
 		original_nodes = [i for i in range(num_nodes)]
 		true_syb_idxs = [i for i in range(num_nodes) if nodes[i].type == "syb"]
