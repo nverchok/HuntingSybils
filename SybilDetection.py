@@ -1,6 +1,8 @@
 from GraphAnalysis import *
 from Utils import *
 import sypy
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
 class SybilDetection:
 	""" A class that encompasses the data required to perform detection with
@@ -65,7 +67,7 @@ class SybilDetection:
 				true_syb_idxs=val_true_syb_idxs, 
 				true_mal_idxs=val_true_mal_idxs, 
 				pred_syb_idxs=iter_syb_idxs)
-			results[D_ITER] = simp_results
+			results[D_ITER] = iter_results
 			id_to_pred_type[D_ITER] = {}
 			id_to_pred_pval[D_ITER] = {}
 			for i in range(num_val_nodes):
@@ -88,5 +90,7 @@ class SybilDetection:
 			for i in range(num_val_nodes):
 				node_id = nodes_val[i].id
 				id_to_pred_type[D_RANK][node_id] = "sybil" if i in rank_results.pred_syb_idxs else "non-sybil"
-		
+
+		comp = {node.id: (node.type, id_to_pred_pval["simple"][node.id], id_to_pred_pval["iterative"][node.id]) for node in nodes_val}
+		pp.pprint(comp)
 		return results, id_to_pred_type, id_to_pred_pval

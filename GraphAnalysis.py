@@ -58,7 +58,7 @@ class GraphAnalysis:
 		pvals = np.zeros(self.num_nodes)
 		for i in range(self.num_nodes):
 			if i not in ignored_node_idxs:
-				pval, llh = self.__calcNodePval__(self.edge_lists[i], ignored_node_idxs)
+				pval, llh = self.__calcNodePval__(self.edge_lists[i], ignored_node_idxs=ignored_node_idxs)
 				pvals[i] = pval
 		return pvals
 
@@ -84,8 +84,8 @@ class GraphAnalysis:
 		final_pvals = np.zeros(self.num_nodes)
 		while len(syb_idxs) < 1*self.num_nodes:
 			temp_pvals = self.__calcPvals__(ignored_node_idxs=syb_idxs)
-			min_pval = temp_pvals[0]
-			min_idx = 0
+			min_pval = float('inf')
+			min_idx = -1
 			for i in range(self.num_nodes):
 				if i not in syb_idxs and temp_pvals[i] < min_pval:
 					min_pval = temp_pvals[i]

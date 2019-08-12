@@ -27,7 +27,7 @@ if __name__ == "__main__":
 	p("start")
 	val_time = 4
 	val_pos = (35,22)
-	val_rad = 32.5
+	val_rad = 50
 	terrain = Terrain(140,70)
 	terrain.addRestriction((0, 0, 140, 16.1), color="#636363")
 	terrain.addRestriction((0, 16.1+10.67, 140, 16.46), color="#AAAAAA")

@@ -6,6 +6,7 @@ from matplotlib.patches import Circle
 from matplotlib.widgets import Slider
 from matplotlib.widgets import RadioButtons
 from Utils import *
+from CurveAnalysis import *
 
 class GUI:
 	""" Encompasses the entire graphical interface, as well as managing its
@@ -194,6 +195,15 @@ class GUI:
 			return
 		
 
+		def __drawNodeCDF__(node_id):
+			edge_lists = self.loc_val_data[self.curr_val_label]["edges"]
+			id2idx_val = self.loc_val_data[self.curr_val_label]["graph"].id_to_idx
+			edges = edge_lists[id2idx_val[node_id]]
+			xvals, cdf = CurveAnalysis.calcNodeConnCDF(edges)
+			CurveAnalysis.plotCDF(xvals, cdf)
+			return
+		
+
 		def __updateValRadiusAlpha__():
 			""" Updates the visual representation of the location validation are
 			(i.e. a large circle), showing it only while the procedure is in progress
@@ -232,6 +242,13 @@ class GUI:
 				new_alpha = 1-((self.curr_time - arrow_time)/GUI.arrow_alpha_duration)**0.5
 				arrow_gfx.set_visible(True)
 				arrow_gfx.set_alpha(new_alpha)
+			return
+		
+
+		def __updateArrows__(node_id):
+			__drawNodewiseArrows__(node_id)
+			for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
+				__updateArrowAlpha__(arrow_gfx, node_id)
 			return
 
 		
@@ -311,7 +328,7 @@ class GUI:
 			return
 		
 		
-		def on_pick(event):
+		def __updateNodeStatus__(event):
 			""" Creates a click-listener for the nodes to allow showing/hiding the
 			set of a node's arrows. """
 			if self.curr_val_label == None:
@@ -319,16 +336,17 @@ class GUI:
 			node_id = int(str(event.artist.get_url()))
 			old_click_status = self.gfx["node_click_status"][node_id]
 			if old_click_status == GUI.CLICK_STATUS_IDLE:
-				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_ARROWS
-				pval_str = self.__getNodePval__(node_id)
-				print("Node: {}, pval={}".format(node_id, pval_str))
+				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_DISABLE
+				# __updateArrows__(node_id)
+				__drawNodeCDF__(node_id)
+				print("Node: {}, pval={}".format(node_id, self.__getNodePval__(node_id)))
 			elif old_click_status == GUI.CLICK_STATUS_ARROWS:
+				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_DISABLE
+				__updateArrows__(node_id)
+			elif old_click_status == GUI.CLICK_STATUS_DISABLE:
 				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_IDLE
 			else:
 				print("# erroneous click status {} on node_id {}".format(old_click_status, node_id))
-			__drawNodewiseArrows__(node_id)
-			for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
-				__updateArrowAlpha__(arrow_gfx, node_id)
 			self.fig.canvas.draw()
 			return
 		
@@ -337,7 +355,7 @@ class GUI:
 		time_slider.on_changed(__updateCurrTime__)
 		radio_detector.on_clicked(__updateDetector__)
 		radio_loc_val.on_clicked(__updateLocValProcedure__)
-		if len(self.loc_val_data.keys()) > 0:
+		if self.loc_val_data != {}:
 			__updateLocValProcedure__(list(self.loc_val_data.keys())[0])
-		self.fig.canvas.mpl_connect("pick_event", on_pick)
+		self.fig.canvas.mpl_connect("pick_event", __updateNodeStatus__)
 		plt.show()

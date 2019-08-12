@@ -82,15 +82,15 @@ class Edge:
 		self.node_dst = node_dst
 		self.time = time
 		self.successful = successful
+		self.dist = Node.getDist(self.node_src, self.node_dst, self.time, reported_pos=True)
 	
 
 	def calcStatData(self, dist_prob_function):
 		""" Treats the edge as a binary random variable with a success chance
 		derived using the argument function. Then, calculates both the observed
 		llog-likelihood (llh), and the expectation (exp1) and variance (var) of
-		the edge. Used in the 'Sybilness' evaluation. """
-		dist = Node.getDist(self.node_src, self.node_dst, self.time, reported_pos=True)
-		p = dist_prob_function(dist)
+		the edge. Used in the 'Sybilness' evaluation. Memoized. """
+		p = dist_prob_function(self.dist)
 		q = 1-p
 		ln_p = math.log(p)
 		ln_q = math.log(q)
