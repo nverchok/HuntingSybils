@@ -101,8 +101,8 @@ class Edge:
 		return llh, exp1, var
 		
 
-
-
+	
+	
 
 class KeyGen:
 	""" A class for generating unique (ideally unguessable) fixed-length strings. """
@@ -224,16 +224,13 @@ class Utils:
 		indicating absence). Membership is determined by euclidean proximity
 		from the center at start time, based on *last reported* location. """
 		nodes_temp = []
-		id_to_idx = {}
 		cx, cy = center
 		for node in original_nodes:
-			id_to_idx[node.id] = -1
 			nx, ny = node.getPos(time, reported_pos=True)
 			if (nx-cx)**2 + (ny-cy)**2 <= radius**2:
-				id_to_idx[node.id] = len(nodes_temp)
 				nodes_temp += [node]
 		nodes = np.array(nodes_temp)
-		return nodes, id_to_idx
+		return nodes
 
 
 	@staticmethod
@@ -267,25 +264,69 @@ class Utils:
 
 
 	@staticmethod
-	def createSyPyNetwork(nodes, id_to_idx, edge_lists):
+	def createSyPyNetwork(nodes_val, id_to_edges):
 		""" Converts a given simulation into a SyPy-friendly 'network' object 
 		that allows utilizing other (GSD-based) detection algorithms. First,
 		finds the largest connected component. Then, creates a graph out of the
-		bidirectional edges and corresponding nodes  """
-		num_nodes = len(nodes)
-		succ_edges = {}
+		bidirectional edges and corresponding nodes. """
+		# num_nodes = len(nodes)
+		# succ_edges = {}
+		# bidir_edges = []
+		# for i in range(num_nodes):
+		# 	for edge in edge_lists[i]:
+		# 		if edge.successful:
+		# 			src_idx = id_to_idx[edge.node_src.id]
+		# 			dst_idx = id_to_idx[edge.node_dst.id]
+		# 			if (dst_idx,src_idx) in succ_edges:
+		# 				bidir_edges += [(dst_idx,src_idx)]
+		# 			else:
+		# 				succ_edges[(src_idx,dst_idx)] = True
+		# nx_graph = nx.Graph()
+		# nx_graph.add_nodes_from([i for i in range(num_nodes)])
+		# nx_graph.add_edges_from(bidir_edges)
+		# cc_graph = max(nx.connected_component_subgraphs(nx_graph), key=len)
+		# cc_nodes = cc_graph.nodes()
+		# cc_edges = []
+		# for edge in bidir_edges:
+		# 	if edge[0] in cc_nodes and edge[1] in cc_nodes:
+		# 		cc_edges += [edge]
+		# nx_graph = nx.Graph()
+		# nx_graph.add_nodes_from(cc_nodes)
+		# nx_graph.add_edges_from(cc_edges)
+		# initial_sybils = list(set(range(len(nodes)))-set(cc_nodes))
+		# honest_edge_counts = {}
+		# for i in cc_nodes:
+		# 	honest_edge_counts[i] = 0
+		# for edge in cc_edges:
+		# 	if nodes[edge[0]].type == "hon" and nodes[edge[1]].type == "hon":
+		# 		honest_edge_counts[edge[0]] += 1
+		# 		honest_edge_counts[edge[1]] += 1
+		# known_honests = [sorted(honest_edge_counts.items(), key=lambda kv: kv[1], reverse=True)[0][0]]
+		# original_nodes = [i for i in range(num_nodes)]
+		# true_syb_idxs = [i for i in range(num_nodes) if nodes[i].type == "syb"]
+		# true_mal_idxs = [i for i in range(num_nodes) if nodes[i].type == "mal"]
+		# network = sypy.Network(None, None, "test", custom_graph=sypy.CustomGraph(nx_graph))
+		# network.set_data(original_nodes=original_nodes, sybils=true_syb_idxs, malicious=true_mal_idxs, known_honests=known_honests, initial_sybils=initial_sybils)
+		# return network
+
+
+		all_ids = {node.id for node in nodes_val}
+		hon_ids = {node.id for node in nodes_val if node.type == "hon"}
+		syb_ids = [node.id for node in nodes_val if node.type == "syb"]
+		mal_ids = [node.id for node in nodes_val if node.type == "mal"]
+		succ_edges = set()
 		bidir_edges = []
-		for i in range(num_nodes):
-			for edge in edge_lists[i]:
+		for node_id in all_ids:
+			for edge in id_to_edges[node_id]:
 				if edge.successful:
-					src_idx = id_to_idx[edge.node_src.id]
-					dst_idx = id_to_idx[edge.node_dst.id]
-					if (dst_idx,src_idx) in succ_edges:
-						bidir_edges += [(dst_idx,src_idx)]
+					src_id = edge.node_src.id
+					dst_id = edge.node_dst.id
+					if (dst_id,src_id) in succ_edges:
+						bidir_edges += [(dst_id,src_id)]
 					else:
-						succ_edges[(src_idx,dst_idx)] = True
+						succ_edges.add((src_id,dst_id))
 		nx_graph = nx.Graph()
-		nx_graph.add_nodes_from([i for i in range(num_nodes)])
+		nx_graph.add_nodes_from(all_ids)
 		nx_graph.add_edges_from(bidir_edges)
 		cc_graph = max(nx.connected_component_subgraphs(nx_graph), key=len)
 		cc_nodes = cc_graph.nodes()
@@ -296,20 +337,15 @@ class Utils:
 		nx_graph = nx.Graph()
 		nx_graph.add_nodes_from(cc_nodes)
 		nx_graph.add_edges_from(cc_edges)
-		initial_sybils = list(set(range(len(nodes)))-set(cc_nodes))
-		honest_edge_counts = {}
-		for i in cc_nodes:
-			honest_edge_counts[i] = 0
+		initial_sybils = list(set(all_ids)-set(cc_nodes))
+		honest_edge_counts = {node_id:0 for node_id in cc_nodes}
 		for edge in cc_edges:
-			if nodes[edge[0]].type == "hon" and nodes[edge[1]].type == "hon":
+			if edge[0] in hon_ids and edge[1] in hon_ids:
 				honest_edge_counts[edge[0]] += 1
 				honest_edge_counts[edge[1]] += 1
 		known_honests = [sorted(honest_edge_counts.items(), key=lambda kv: kv[1], reverse=True)[0][0]]
-		original_nodes = [i for i in range(num_nodes)]
-		true_syb_idxs = [i for i in range(num_nodes) if nodes[i].type == "syb"]
-		true_mal_idxs = [i for i in range(num_nodes) if nodes[i].type == "mal"]
 		network = sypy.Network(None, None, "test", custom_graph=sypy.CustomGraph(nx_graph))
-		network.set_data(original_nodes=original_nodes, sybils=true_syb_idxs, malicious=true_mal_idxs, known_honests=known_honests, initial_sybils=initial_sybils)
+		network.set_data(original_nodes=all_ids, sybils=syb_ids, malicious=mal_ids, known_honests=known_honests, initial_sybils=initial_sybils)
 		return network
 
 

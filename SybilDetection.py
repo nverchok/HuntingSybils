@@ -2,28 +2,29 @@ from GraphAnalysis import *
 from Utils import *
 import sypy
 import pprint
-pp = pprint.PrettyPrinter(indent=4)
+pp = pprint.PrettyPrinter(width=10)
 
 class SybilDetection:
 	""" A class that encompasses the data required to perform detection with
 	multiple algorithms, and evaluate the results. """
-	D_SIMP = "simple"
-	D_ITER = "iterative"
-	D_PRED = "sybil predict"
-	D_RANK = "sybil rank"
+	D_SIMP = "Simple"
+	D_ITER = "Iterative"
+	D_PRED = "Sybil-Predict"
+	D_RANK = "Sybil-Rank"
 	all_detectors = {D_SIMP, D_ITER, D_PRED, D_RANK}
 
 
-	def __init__(self, nodes_all):
-		""" Initializes a SybilDetection object that stored the data necessary
-		for the runDetectionAlgorithms() function. """
-		self.nodes = nodes_all
-		self.num_nodes = len(self.nodes)
-		self.true_syb_idxs = {i for i in range(self.num_nodes) if self.nodes[i].type == "syb"}
-		self.true_mal_idxs = {i for i in range(self.num_nodes) if self.nodes[i].type == "mal"}
+	@staticmethod
+	def __genResultString__(results):
+		res_str = ""
+		res_str += "  precision    : {:.3f}\n".format(results.precision())
+		res_str += "  recall (syb) : {:.3f}\n".format(results.recall())
+		res_str += "  recall (mal) : {:.3f}\n".format(results.recall_mal())
+		return res_str
 
 
-	def runDetectionAlgorithms(self, nodes_val, id_to_idx, edge_lists, active_detectors=all_detectors):
+	@staticmethod
+	def runDetectionAlgorithms(nodes_val, id_to_edges, active_detectors=all_detectors):
 		""" Takes in the data from a location validation procedure and executes 
 		the default detection algorithms on it (unless overridden). Returns three
 		dicts, each indexed by the active detector labels. These three dicts are of 
@@ -34,63 +35,48 @@ class SybilDetection:
 		D_PRED = SybilDetection.D_PRED
 		D_RANK = SybilDetection.D_RANK
 		results = {}
-		id_to_pred_type = {}
-		id_to_pred_pval = {}
 
-		graph_analysis = GraphAnalysis(nodes_val, edge_lists)
-		num_val_nodes = len(nodes_val)
-		val_node_idxs = set(range(num_val_nodes))
-		val_true_syb_idxs = {i for i in range(num_val_nodes) if nodes_val[i].type == "syb"}
-		val_true_mal_idxs = {i for i in range(num_val_nodes) if nodes_val[i].type == "mal"}
-		val_syb_fraction = len(val_true_syb_idxs) / len(nodes_val)
-		network = Utils.createSyPyNetwork(nodes_val, id_to_idx, edge_lists)
+		graph_analysis = GraphAnalysis(nodes_val, id_to_edges)
+		val_all_ids = {node.id for node in nodes_val}
+		val_syb_ids = {node.id for node in nodes_val if node.type == "syb"}
+		val_mal_ids = {node.id for node in nodes_val if node.type == "mal"}
+		val_syb_fraction = len(val_syb_ids) / len(nodes_val)
+		network = Utils.createSyPyNetwork(nodes_val, id_to_edges)
 
 		if D_SIMP in active_detectors:
-			simp_syb_idxs, simp_pvals = graph_analysis.simpleSybilDetection()
-			simp_results = sypy.Results(
-				val_node_idxs=val_node_idxs, 
-				true_syb_idxs=val_true_syb_idxs, 
-				true_mal_idxs=val_true_mal_idxs, 
-				pred_syb_idxs=simp_syb_idxs)
-			results[D_SIMP] = simp_results
-			id_to_pred_type[D_SIMP] = {}
-			id_to_pred_pval[D_SIMP] = {}
-			for i in range(num_val_nodes):
-				node_id = nodes_val[i].id
-				id_to_pred_type[D_SIMP][node_id] = "sybil" if i in simp_syb_idxs else "non-sybil"
-				id_to_pred_pval[D_SIMP][node_id] = simp_pvals[i]
+			results[D_SIMP] = {}
+			simp_syb_ids, simp_pvals = graph_analysis.simpleSybilDetection()
+			simp_results = sypy.Results(val_node_ids=val_all_ids, true_syb_ids=val_syb_ids, true_mal_ids=val_mal_ids, pred_syb_ids=simp_syb_ids)
+			results[D_SIMP]["matrix"] = SybilDetection.__genResultString__(simp_results)
+			results[D_SIMP]["id_to_pval"] = simp_pvals
+			results[D_SIMP]["id_to_type"] = {node_id:("sybil" if node_id in simp_syb_ids else "non-sybil") for node_id in val_all_ids}
 		
 		if D_ITER in active_detectors:
-			iter_syb_idxs, iter_pvals = graph_analysis.iterativeSybilDetection()
-			iter_results = sypy.Results(
-				val_node_idxs=val_node_idxs, 
-				true_syb_idxs=val_true_syb_idxs, 
-				true_mal_idxs=val_true_mal_idxs, 
-				pred_syb_idxs=iter_syb_idxs)
-			results[D_ITER] = iter_results
-			id_to_pred_type[D_ITER] = {}
-			id_to_pred_pval[D_ITER] = {}
-			for i in range(num_val_nodes):
-				node_id = nodes_val[i].id
-				id_to_pred_type[D_ITER][node_id] = "sybil" if i in iter_syb_idxs else "non-sybil"
-				id_to_pred_pval[D_ITER][node_id] = iter_pvals[i]
+			results[D_ITER] = {}
+			iter_syb_ids, iter_pvals = graph_analysis.iterativeSybilDetection()
+			iter_results = sypy.Results(val_node_ids=val_all_ids, true_syb_ids=val_syb_ids, true_mal_ids=val_mal_ids, pred_syb_ids=iter_syb_ids)
+			results[D_ITER]["matrix"] = SybilDetection.__genResultString__(iter_results)
+			results[D_ITER]["id_to_pval"] = iter_pvals
+			results[D_ITER]["id_to_type"] = {node_id:("sybil" if node_id in iter_syb_ids else "non-sybil") for node_id in val_all_ids}
 
 		if D_PRED in active_detectors:
+			results[D_PRED] = {}
 			pred_results = sypy.SybilPredictDetector(network, pivot=val_syb_fraction).detect()
-			results[D_PRED] = pred_results
-			id_to_pred_type[D_PRED] = {}
-			for i in range(num_val_nodes):
-				node_id = nodes_val[i].id
-				id_to_pred_type[D_PRED][node_id] = "sybil" if i in pred_results.pred_syb_idxs else "non-sybil"
+			results[D_PRED]["matrix"] = SybilDetection.__genResultString__(pred_results)
+			results[D_PRED]["id_to_type"] = {node_id:("sybil" if node_id in pred_results.pred_syb_ids else "non-sybil") for node_id in val_all_ids}
 
 		if D_RANK in active_detectors:
+			results[D_RANK] = {}
 			rank_results = sypy.SybilPredictDetector(network, pivot=val_syb_fraction).detect()
-			results[D_RANK] = rank_results
-			id_to_pred_type[D_RANK] = {}
-			for i in range(num_val_nodes):
-				node_id = nodes_val[i].id
-				id_to_pred_type[D_RANK][node_id] = "sybil" if i in rank_results.pred_syb_idxs else "non-sybil"
+			results[D_RANK]["matrix"] = SybilDetection.__genResultString__(rank_results)
+			results[D_RANK]["id_to_type"] = {node_id:("sybil" if node_id in rank_results.pred_syb_ids else "non-sybil") for node_id in val_all_ids}
 
-		comp = {node.id: (node.type, id_to_pred_pval["simple"][node.id], id_to_pred_pval["iterative"][node.id]) for node in nodes_val}
-		pp.pprint(comp)
-		return results, id_to_pred_type, id_to_pred_pval
+		# comp = {
+		# 	node.id: (
+		# 	node.type,
+		# 	round(results[D_ITER]["id_to_pval"][node.id]-results[D_SIMP]["id_to_pval"][node.id],4),
+		# 	round(results[D_SIMP]["id_to_pval"][node.id],4),
+		# 	round(results[D_ITER]["id_to_pval"][node.id],4)
+		# 	) for node in nodes_val}
+		# pp.pprint(comp)
+		return results

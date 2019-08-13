@@ -18,35 +18,36 @@
 
 class Results:
 
-    def __init__(self, detector=None, val_node_idxs=None, true_syb_idxs=None, true_mal_idxs=None, pred_syb_idxs=None):
+    def __init__(self, detector=None, val_node_ids=None, true_syb_ids=None, true_mal_ids=None, pred_syb_ids=None):
         if detector != None:
-            self.val_node_idxs = set(detector.network.original_nodes)
-            self.true_syb_idxs = set(detector.network.sybils)
-            self.true_mal_idxs = set(detector.network.malicious)
-            self.pred_hon_idxs = set(detector.honests_predicted)
-            self.pred_syb_idxs = self.val_node_idxs - self.pred_hon_idxs
+            self.val_node_ids = set(detector.network.original_nodes)
+            self.true_syb_ids = set(detector.network.sybils)
+            self.true_mal_ids = set(detector.network.malicious)
+            self.pred_hon_ids = set(detector.honests_predicted)
+            self.pred_syb_ids = self.val_node_ids - self.pred_hon_ids
             self.initial_sybils = set(detector.network.initial_sybils)
         else:
-            self.val_node_idxs = val_node_idxs
-            self.true_syb_idxs = true_syb_idxs
-            self.true_mal_idxs = true_mal_idxs
-            self.pred_syb_idxs = pred_syb_idxs
-            self.pred_hon_idxs = self.val_node_idxs - self.pred_syb_idxs
+            self.val_node_ids = val_node_ids
+            self.true_syb_ids = true_syb_ids
+            self.true_mal_ids = true_mal_ids
+            self.pred_syb_ids = pred_syb_ids
+            self.pred_hon_ids = self.val_node_ids - self.pred_syb_ids
             self.initial_sybils = set()
         self.confusion_matrix = self.__compute_confusion_matrix__()
 
     def __compute_confusion_matrix__(self):
-        P = len(self.true_syb_idxs)
-        N = len(self.val_node_idxs) - len(self.true_syb_idxs) - len(self.true_mal_idxs)
-        true_syb = self.true_syb_idxs
-        true_hon = (self.val_node_idxs - self.true_syb_idxs) - self.true_mal_idxs
-        pred_syb = self.pred_syb_idxs - self.true_mal_idxs
-        pred_hon = self.pred_hon_idxs - self.true_mal_idxs
+        P = len(self.true_syb_ids)
+        N = len(self.val_node_ids) - len(self.true_syb_ids) - len(self.true_mal_ids)
+        true_syb = self.true_syb_ids
+        true_hon = (self.val_node_ids - self.true_syb_ids) - self.true_mal_ids
+        pred_syb = self.pred_syb_ids - self.true_mal_ids
+        pred_hon = self.pred_hon_ids - self.true_mal_ids
 
         TN = len(set.intersection(pred_hon,true_hon))
         FN = len(set.intersection(pred_hon,true_syb))
         TP = len(set.intersection(pred_syb,true_syb))
         FP = len(set.intersection(pred_syb,true_hon))
+        TPR_mal = len(set.intersection(self.pred_syb_ids,self.true_mal_ids))/len(self.true_mal_ids)
         
         confusion_matrix = {
             "N": N,
@@ -54,7 +55,8 @@ class Results:
             "TN": TN,
             "FN": FN,
             "TP": TP,
-            "FP": FP
+            "FP": FP,
+            "TPR_mal": TPR_mal
         }
         return confusion_matrix
 
@@ -65,6 +67,10 @@ class Results:
     def recall(self):
         cm = self.confusion_matrix
         return round((cm["TP"]/max((float)(cm["TP"]+cm["FN"]),1)),3)
+    
+    def recall_mal(self):
+        cm = self.confusion_matrix
+        return round(cm["TPR_mal"],3)
 
     def accuracy(self):
         cm = self.confusion_matrix

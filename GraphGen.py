@@ -21,7 +21,7 @@ class GraphGen:
 		self.val_time = val_time
 		self.val_pos = val_pos
 		self.val_rad = val_rad
-		self.nodes, self.id_to_idx = Utils.getLocValSet(nodes_all, val_time, val_pos, val_rad)
+		self.nodes = Utils.getLocValSet(nodes_all, val_time, val_pos, val_rad)
 		self.time_start = val_time
 		self.round_duration = round_duration
 		self.num_nodes = len(self.nodes)
@@ -70,10 +70,9 @@ class GraphGen:
 		return time
 	
 
-	def __attemptConn__(self, node1, node2, rnd):
+	def __attemptConn__(self, node1, node2, time):
 		""" Internal. Attempts to establish a connection by flipping a coin biased
 		according to the node types and separating distance at the *true* time. """
-		time = self.__getRoundTime__(rnd)
 		dist = Node.getDist(node1, node2, time, reported_pos=False)
 		prob = self.__getSimuDistProb__(dist)
 		return np.random.random() <= prob * self.conn_prob_mult[(node1.type,node2.type)]
@@ -113,14 +112,15 @@ class GraphGen:
 		every (listener, broadcaster) tuple, attempt to establish a connection by
 		flipping a biased coin based on distance, and the two node types. Returns
 		a 2D array of #nodes*#rounds, with each entry being a list of seen keys. """
-		if self.num_nodes < 2:
+		num_nodes, num_rounds = comm_plan.shape
+		if num_nodes < 2:
 			return None
-
-		simulated_conns = np.ndarray((self.num_nodes, self.num_rounds), dtype=object)
-		for rnd in range(self.num_rounds):
+		simulated_conns = np.ndarray((num_nodes, num_rounds), dtype=object)
+		for rnd in range(num_rounds):
+			time = self.__getRoundTime__(rnd)
 			listener_set = []
 			bdcaster_set = []
-			for i in range(self.num_nodes):
+			for i in range(num_nodes):
 				simulated_conns[i,rnd] = []
 				if comm_plan[i,rnd] == "listen":
 					listener_set += [i]
@@ -130,22 +130,22 @@ class GraphGen:
 				for j in bdcaster_set:
 					listen_node = self.nodes[i]
 					bdcast_node = self.nodes[j]
-					conn_successful = self.__attemptConn__(listen_node, bdcast_node, rnd)
+					conn_successful = self.__attemptConn__(listen_node, bdcast_node, time)
 					if conn_successful:
 						simulated_conns[i,rnd] += [comm_plan[j,rnd]]
 		return simulated_conns
 	
 	
-	def formEdges(self, simulated_conns, potential_conns, key_to_idx):
+	def formEdges(self, simulated_conns, potential_conns, key_to_idx, max_attempts=999):
 		""" Constructs a list of Edge objects, each of which captures the source 
 		and destination nodes, time, and success/failure of th edge. The ith entry
 		in this list corresponds to all edges going TO node i in self.nodes. """
-		if self.num_nodes < 2:
+		if self.num_nodes < 2 or max_attempts < 1:
 			return None
-		node_edges = np.ndarray(self.num_nodes, dtype=object)
-		single_attempt_restr = set()
-		for i in range(self.num_nodes):
-			node_edges[i] = []
+		id_to_edges = {}
+		num_attempts = {}
+		for node in self.nodes:
+			id_to_edges[node.id] = []
 		for rnd in range(self.num_rounds):
 			time = self.__getRoundTime__(rnd)
 			for i in range(self.num_nodes):
@@ -153,9 +153,12 @@ class GraphGen:
 				node_potl_conns = {key_to_idx[key] for key in potential_conns[i,rnd]}
 				node_simu_conns = {key_to_idx[key] for key in simulated_conns[i,rnd]}
 				for j in node_potl_conns:
-					if (i,j) not in single_attempt_restr:
-						single_attempt_restr |= {(i,j)}
+					if (i,j) not in num_attempts:
+						num_attempts[(i,j)] = 1
+					else:
+						num_attempts[(i,j)] += 1
+					if num_attempts[(i,j)] <= max_attempts:
 						node_dst = self.nodes[j]
 						successful = j in node_simu_conns
-						node_edges[j] += [Edge(node_src, node_dst, time, successful)]
-		return node_edges
+						id_to_edges[node_dst.id] += [Edge(node_src, node_dst, time, successful)]
+		return id_to_edges

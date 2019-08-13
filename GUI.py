@@ -5,18 +5,18 @@ from matplotlib.patches import Rectangle
 from matplotlib.patches import Circle
 from matplotlib.widgets import Slider
 from matplotlib.widgets import RadioButtons
+from matplotlib.widgets import CheckButtons
 from Utils import *
 from CurveAnalysis import *
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
 class GUI:
 	""" Encompasses the entire graphical interface, as well as managing its
 	interactive elements such as buttons, sliders, and stdout output. """
-	figsize = (13.0, 8.0)
+	figsize = (10.0, 5.0)
 	edges_display_reported_pos = False
 	arrow_alpha_duration = 1.5
-	CLICK_STATUS_IDLE = 0
-	CLICK_STATUS_ARROWS = 1
-	CLICK_STATUS_DISABLE = 2
 	axcolor = "lightgoldenrodyellow"
 	col_terrain_normal = "#DDDDDD"
 	col_terrain_blocked = "#AAAAAA"
@@ -32,15 +32,19 @@ class GUI:
 		"sybil": "darkred",
 		"unknown": "darkgrey"
 	}
+	dim_node_rad = 0.38
+	dim_node_rad_h = 0.55
+	dim_node_lw = 1.5
+	dim_node_lw_h = 2.25
+	
 
 
-	def __init__(self, terrain, nodes, id_to_idx):
+
+	def __init__(self, terrain, id_to_node):
 		""" Stores the relevant data, and initialized a set of gfx lookup tables
 		to store the references to the drawn graphical objects. """
 		self.terrain = terrain
-		self.nodes = nodes
-		self.num_nodes = len(self.nodes)
-		self.id_to_idx = id_to_idx
+		self.id_to_node = id_to_node
 		self.loc_val_data = {}
 		self.max_time = Node.max_time
 
@@ -49,29 +53,40 @@ class GUI:
 		self.gfx["radio_detector"] = None
 		self.gfx["ax_radio_detector"] = None
 		self.gfx["node_gfx"] = {}
-		self.gfx["node_click_status"] = {node.id: GUI.CLICK_STATUS_IDLE for node in self.nodes}
+		self.gfx["highlighted_node"] = None
+		self.gfx["highlighted_text"] = None
 		self.gfx["nodewise_arrow_gfx"] = {}
+		self.gfx["nodewise_arrow_status"] = {node_id:False for node_id in self.id_to_node.keys()}
+		self.gfx["actions_toggle_cdf"] = False
+		self.gfx["actions_toggle_pval"] = False
+		self.gfx["actions_toggle_arrows"] = False
+		self.gfx["use_reported_location"] = False
 
 		self.curr_val_label = None
-		self.curr_detector = None
+		self.curr_val_data = None
+		self.curr_det_label = None
+		self.curr_det_results = None
 		self.curr_time = 0
+	
+
+	def __printGreeting__(self):
+		print("\n  ______________________\n  | SIMULATOR LAUNCHED |\n  "+"\u203E"*22+"\n")
+		return
 	
 
 	def __getNodeFillColor__(self, node_id):
 		""" Returns the fill color of a node (true node type). """
-		true_type = self.nodes[self.id_to_idx[node_id]].type
+		true_type = self.id_to_node[node_id].type
 		return GUI.col_node_fill.get(true_type, "black")
 	
 
 	def __getNodeEdgeColor__(self, node_id):
 		""" Returns the edge color of a node (predicted node type). """
-		if self.curr_val_label == None or self.curr_detector == None:
-			return self.__getNodeFillColor__(node_id)
+		if self.curr_det_results != None:
+			pred_type = self.curr_det_results["id_to_type"].get(node_id, "unknown")
+			return GUI.col_node_edge[pred_type]
 		else:
-			curr_loc_val_data = self.loc_val_data[self.curr_val_label]
-			curr_detector_pred_types = curr_loc_val_data["id_to_type"][self.curr_detector]
-			pred_type = curr_detector_pred_types.get(node_id, "unknown")
-			return GUI.col_node_edge.get(pred_type, "black")
+			return self.__getNodeFillColor__(node_id)
 
 	
 	def __getArrowColor__(self, edge):
@@ -81,38 +96,36 @@ class GUI:
 
 	def __getNodePval__(self, node_id):
 		""" Returns the pval of a node if available. """
-		if self.curr_val_label == None or self.curr_detector == None:
-			return "N/A"
+		if self.curr_det_results != None and "id_to_pval" in self.curr_det_results:
+			return str(self.curr_det_results["id_to_pval"][node_id])
 		else:
-			curr_loc_val_data = self.loc_val_data[self.curr_val_label]
-			curr_detector_pvals = curr_loc_val_data["id_to_pval"].get(self.curr_detector, {})
-			node_pval = curr_detector_pvals.get(node_id, "unknown")
-			return str(node_pval)
+			return "N/A"
 
 
-	def addLocVal(self, val_label, graph_gen, edge_lists, results, id_to_type, id_to_pval):
+	def addLocVal(self, val_label, graph_gen, id_to_edges, results):
 		""" Stores the data associated with a location validation procedure. Thus
 		multiple location validation procedures may be plotted at once, viewed one
 		at a time (but swapped-between dynamically). """
 		self.loc_val_data[val_label] = {
 			"detectors": list(results.keys()),
 			"graph": graph_gen,
-			"edges": edge_lists,
-			"results": results,
-			"id_to_type": id_to_type,
-			"id_to_pval": id_to_pval
+			"id_to_edges": id_to_edges,
+			"results": results
 		}
 		self.curr_val_label = val_label
 		detectors = self.loc_val_data[val_label]["detectors"]
 		initial_det_label = detectors[0]
-		self.curr_detector = initial_det_label
+		self.curr_det_label = initial_det_label
+		self.curr_det_results = results[initial_det_label]
+		return
 
 
 	def draw(self):
 		""" Executes the drawing. """
+		self.__printGreeting__()
 		self.fig = plt.figure(figsize=GUI.figsize)
 		self.ax = self.fig.add_axes(
-			(0.15, 0.10, 0.85, 0.85),
+			(0.15, 0.10, 0.80, 0.85),
 			aspect="equal", 
 			frameon=False,
 			xlim=(-0.05, self.terrain.width + 0.05),
@@ -124,7 +137,7 @@ class GUI:
 			ec=GUI.col_terrain_edge,
 			fc=GUI.col_terrain_normal))
 
-		ax_time_slider = plt.axes([0.20, 0.03, 0.75, 0.03], facecolor=GUI.axcolor, frameon=True)
+		ax_time_slider = plt.axes([0.20, 0.04, 0.70, 0.03], facecolor=GUI.axcolor, frameon=True)
 		axfig_time_slider = self.fig.add_axes(
 			ax_time_slider, 
 			frameon=False,
@@ -133,17 +146,25 @@ class GUI:
 		ax_time_slider.xaxis.set_visible(True)
 		ax_time_slider.set_xticks(list(range(Node.max_time)), minor=False)
 		time_slider = Slider(ax_time_slider, "Time", 0, self.max_time, valinit=0, closedmin=True, closedmax=True)
-		time_slider.valstep = 0.2
+		time_slider.valstep = 0.5
 
 
-		ax_radio_loc_val = plt.axes([0.02, 0.70, 0.08, 0.25], facecolor=GUI.axcolor, frameon=True)
+		ax_radio_loc_val = plt.axes([0.01, 0.70, 0.10, 0.22], facecolor=GUI.axcolor, frameon=True)
 		radio_loc_val = RadioButtons(ax_radio_loc_val, tuple(self.loc_val_data.keys()))
 
 		
-		ax_radio_detector = plt.axes([0.02, 0.40, 0.08, 0.25], facecolor=GUI.axcolor, frameon=True)
+		ax_radio_detector = plt.axes([0.01, 0.40, 0.10, 0.25], facecolor=GUI.axcolor, frameon=True)
 		radio_detector = RadioButtons(ax_radio_detector, tuple())
 		self.gfx["radio_detector"] = radio_detector
 		self.gfx["ax_radio_detector"] = ax_radio_detector
+
+
+		ax_check_actions = plt.axes([0.01, 0.13, 0.10, 0.22], facecolor=GUI.axcolor, frameon=True)
+		check_actions = CheckButtons(ax_check_actions, ("cdf", "pval", "arrows"), (False, False, False))
+
+		ax_reported_loc = plt.axes([0.01, -0.05, 0.13, 0.21], facecolor=GUI.axcolor, frameon=False)
+		reported_loc = CheckButtons(ax_reported_loc, ("use rep. loc.", ), (False,))
+
 
 		for rstr in self.terrain.restrictions:
 			data = rstr[0]
@@ -153,12 +174,11 @@ class GUI:
 
 		def __drawNodes__():
 			""" Creates graphical objects for all nodes. """
-			for i in range(self.num_nodes):
-				node = self.nodes[i]
+			for node in self.id_to_node.values():
 				node_gfx = Circle(
 					node.getPos(0), 
-					radius=0.38, 
-					linewidth=1.5,
+					radius=GUI.dim_node_rad, 
+					linewidth=GUI.dim_node_lw,
 					ec=self.__getNodeEdgeColor__(node.id), 
 					fc=self.__getNodeFillColor__(node.id), 
 					zorder=3)
@@ -172,35 +192,41 @@ class GUI:
 		
 		def __drawNodewiseArrows__(node_id):
 			""" Creates the set of arrow objects for a given broadcasting node. """
-			if node_id not in self.gfx["nodewise_arrow_gfx"]:
-				edge_lists = self.loc_val_data[self.curr_val_label]["edges"]
-				id2idx_val = self.loc_val_data[self.curr_val_label]["graph"].id_to_idx
-				temp_arrow_list = []
-				for edge in edge_lists[id2idx_val[node_id]]:
-					pos1 = edge.node_src.getPos(edge.time, reported_pos=GUI.edges_display_reported_pos)
-					pos2 = edge.node_dst.getPos(edge.time, reported_pos=GUI.edges_display_reported_pos)
-					x, y, dx, dy = (pos2[0], pos2[1], pos1[0]-pos2[0], pos1[1]-pos2[1])
-					col = self.__getArrowColor__(edge)
-					arrow_gfx = self.ax.arrow(
-						x, y, dx, dy, 
-						color=col, 
-						visible=False, 
-						zorder=2, 
-						linewidth=0.2, 
-						head_width=0, 
-						length_includes_head=True)
-					arrow_gfx.set_url(edge.time)
-					temp_arrow_list += [arrow_gfx]
-				self.gfx["nodewise_arrow_gfx"][node_id] = np.array(temp_arrow_list)
+			if node_id in self.gfx["nodewise_arrow_gfx"]:
+				return
+			edges = self.curr_val_data["id_to_edges"].get(node_id, [])
+			temp_arrow_list = []
+			for edge in edges:
+				pos1 = edge.node_src.getPos(edge.time, reported_pos=self.gfx["use_reported_location"])
+				pos2 = edge.node_dst.getPos(edge.time, reported_pos=self.gfx["use_reported_location"])
+				x, y, dx, dy = (pos2[0], pos2[1], pos1[0]-pos2[0], pos1[1]-pos2[1])
+				col = self.__getArrowColor__(edge)
+				arrow_gfx = self.ax.arrow(
+					x, y, dx, dy, 
+					color=col, 
+					visible=False, 
+					zorder=2, 
+					linewidth=0.2, 
+					head_width=0, 
+					length_includes_head=True)
+				arrow_gfx.set_url(edge.time)
+				__updateArrowAlpha__(arrow_gfx)
+				temp_arrow_list += [arrow_gfx]
+			self.gfx["nodewise_arrow_gfx"][node_id] = np.array(temp_arrow_list)
 			return
 		
 
 		def __drawNodeCDF__(node_id):
-			edge_lists = self.loc_val_data[self.curr_val_label]["edges"]
-			id2idx_val = self.loc_val_data[self.curr_val_label]["graph"].id_to_idx
-			edges = edge_lists[id2idx_val[node_id]]
+			id_to_edges = self.curr_val_data["id_to_edges"]
+			edges = id_to_edges[node_id]
 			xvals, cdf = CurveAnalysis.calcNodeConnCDF(edges)
-			CurveAnalysis.plotCDF(xvals, cdf)
+			CurveAnalysis.plotCDF(self.id_to_node[node_id], xvals, cdf)
+			return
+
+		
+		def __updateActions__(action_label):
+			action_str = "actions_toggle_" + action_label
+			self.gfx[action_str] = not self.gfx[action_str]
 			return
 		
 
@@ -209,32 +235,29 @@ class GUI:
 			(i.e. a large circle), showing it only while the procedure is in progress
 			and hiding it before and after the procedure. """
 			rad_gfx = self.gfx["loc_val_radius"]
-			graph = self.loc_val_data[self.curr_val_label]["graph"]
+			graph = self.curr_val_data["graph"]
 			time_start = graph.time_start
 			time_end = graph.time_end
 			if self.curr_time < time_start:
-				rad_gfx.set_visible(False)
+				rad_gfx.set_alpha(0.1)
 			elif self.curr_time < time_end:
 				rad_gfx.set_alpha(1)
-				rad_gfx.set_visible(True)
 			elif self.curr_time < time_end + GUI.arrow_alpha_duration:
-				new_alpha = 1-((self.curr_time - time_end)/GUI.arrow_alpha_duration)**0.5
-				rad_gfx.set_visible(True)
+				new_alpha = max(1-((self.curr_time - time_end)/GUI.arrow_alpha_duration)**0.5,0.1)
 				rad_gfx.set_alpha(new_alpha)
 			else:
-				rad_gfx.set_visible(False)
+				rad_gfx.set_alpha(0.1)
 			return
 		
 
-		def __updateArrowAlpha__(arrow_gfx, node_id):
+		def __updateArrowAlpha__(arrow_gfx, hide_arrows=False):
 			""" Updates the visual representation of a single arrow (edge) depending
 			on the current time selected and the broadcasting node's click status (i.e.
 			whether arrows for this node should be shown at all). """
 			arrow_time = float(arrow_gfx.get_url())
-			node_click_status = self.gfx["node_click_status"][node_id]
-			if node_click_status != GUI.CLICK_STATUS_ARROWS:
+			if hide_arrows:
 				arrow_gfx.set_visible(False)
-			elif arrow_time > self.curr_time:
+			if arrow_time > self.curr_time:
 				arrow_gfx.set_visible(False)
 			elif arrow_time + GUI.arrow_alpha_duration < self.curr_time:
 				arrow_gfx.set_visible(False)
@@ -245,10 +268,10 @@ class GUI:
 			return
 		
 
-		def __updateArrows__(node_id):
-			__drawNodewiseArrows__(node_id)
-			for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
-				__updateArrowAlpha__(arrow_gfx, node_id)
+		def __updateNodes__():
+			for node in self.id_to_node.values():
+				node_gfx = self.gfx["node_gfx"][node.id]
+				node_gfx.center = node.getPos(self.curr_time, reported_pos=self.gfx["use_reported_location"])
 			return
 
 		
@@ -258,18 +281,10 @@ class GUI:
 			arrow objects. """
 			self.curr_time = float(val)
 			__updateValRadiusAlpha__()
-			for node in self.nodes:
-				node_gfx = self.gfx["node_gfx"][node.id]
-				node_gfx.center = node.getPos(self.curr_time)
-			edge_lists = self.loc_val_data[self.curr_val_label]["edges"]
-			id2idx_val = self.loc_val_data[self.curr_val_label]["graph"].id_to_idx
-			for i in range(self.num_nodes):
-				click_status = self.gfx["node_click_status"][i]
-				node_id = self.nodes[i].id
-				if click_status == GUI.CLICK_STATUS_ARROWS:
-					edge_list = edge_lists[id2idx_val[node_id]]
-					for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
-						__updateArrowAlpha__(arrow_gfx, node_id)
+			__updateNodes__()
+			for arrow_gfx_list in self.gfx["nodewise_arrow_gfx"].values():
+				for arrow_gfx in arrow_gfx_list:
+					__updateArrowAlpha__(arrow_gfx)
 			self.fig.canvas.draw()
 			return
 		
@@ -279,12 +294,12 @@ class GUI:
 			Recolors relevant node edges according to the predictions made by the new 
 			detector. Additionally, prints the precision and recall figures for the new 
 			detector to stdout. """
-			self.curr_detector = det_label
-			for node in self.nodes:
+			self.curr_det_label = det_label
+			self.curr_det_results = self.curr_val_data["results"][det_label]
+			for node in self.id_to_node.values():
 				node_gfx = self.gfx["node_gfx"][node.id]
 				node_gfx.set_ec(self.__getNodeEdgeColor__(node.id))
-			results = self.loc_val_data[self.curr_val_label]["results"]
-			print("Mode now: {}  ({}, {})".format(det_label, results[det_label].precision(), results[det_label].recall()))
+			print("Detector: {}\n{}".format(det_label, self.curr_det_results["matrix"]))
 			self.fig.canvas.draw()
 			return
 
@@ -293,11 +308,11 @@ class GUI:
 			""" Updates the current detector list according to the current location
 			validation procedure, correspondingly updating the RadioButtons UI element. 
 			Triggers a UI update indirectly through __updateDetector__()."""
-			detectors = self.loc_val_data[self.curr_val_label]["detectors"]
-			ax_radio_detector = self.gfx["ax_radio_detector"]
-			self.gfx["radio_detector"] = RadioButtons(ax_radio_detector, detectors)
+			self.gfx["radio_detector"].disconnect(0)
+			self.gfx["ax_radio_detector"].cla()
+			self.gfx["radio_detector"] = RadioButtons(self.gfx["ax_radio_detector"], det_list)
 			self.gfx["radio_detector"].on_clicked(__updateDetector__)
-			__updateDetector__(detectors[0])
+			__updateDetector__(det_list[0])
 			return
 
 
@@ -306,13 +321,14 @@ class GUI:
 			objects, updates the old radius object, and updates the detector list.
 			Triggers a UI update indirectly through __updateDetectorList__(). """
 			self.curr_val_label = val_label
+			self.curr_val_data = self.loc_val_data[val_label]
 			if self.gfx["loc_val_radius"] != None:
 				self.gfx["loc_val_radius"].remove()
 			graph = self.loc_val_data[val_label]["graph"]
 			new_val_rad = Circle(
 				graph.val_pos, 
 				radius=graph.val_rad, 
-				linewidth=1, 
+				linewidth=2, 
 				ec=GUI.col_loc_val_radius, 
 				zorder=4, 
 				visible=True, 
@@ -320,42 +336,89 @@ class GUI:
 			self.gfx["loc_val_radius"] = new_val_rad
 			self.ax.add_patch(new_val_rad)
 			__updateValRadiusAlpha__()
-			for arrow_gfx in self.gfx["nodewise_arrow_gfx"].values():
-				arrow_gfx.remove()
+			for arrow_gfx_list in self.gfx["nodewise_arrow_gfx"].values():
+				for arrow_gfx in arrow_gfx_list:
+					arrow_gfx.remove()
 			self.gfx["nodewise_arrow_gfx"] = {}
-			new_det_list = self.loc_val_data[val_label]["detectors"]
+			new_det_list = self.curr_val_data["detectors"]
 			__updateDetectorList__(new_det_list)
 			return
 		
+
+		def __toggleReportedPos__(val_label):
+			""" Toggles between using the true location of nodes and node edges, or
+			the reported one seen by the server and used by the detection algorithms."""
+			self.gfx["use_reported_location"] = not self.gfx["use_reported_location"]
+			__updateNodes__()
+			for node_id in self.gfx["nodewise_arrow_gfx"].keys():
+				for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
+					arrow_gfx.remove()
+				self.gfx["nodewise_arrow_gfx"].pop(node_id)
+				__drawNodewiseArrows__(node_id)
+			self.fig.canvas.draw()
+			return
+			
 		
-		def __updateNodeStatus__(event):
+		
+		def __onClickNode__(event):
 			""" Creates a click-listener for the nodes to allow showing/hiding the
 			set of a node's arrows. """
 			if self.curr_val_label == None:
 				return
 			node_id = int(str(event.artist.get_url()))
-			old_click_status = self.gfx["node_click_status"][node_id]
-			if old_click_status == GUI.CLICK_STATUS_IDLE:
-				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_DISABLE
-				# __updateArrows__(node_id)
+			if self.gfx["actions_toggle_cdf"]:
 				__drawNodeCDF__(node_id)
+			if self.gfx["actions_toggle_pval"]:
 				print("Node: {}, pval={}".format(node_id, self.__getNodePval__(node_id)))
-			elif old_click_status == GUI.CLICK_STATUS_ARROWS:
-				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_DISABLE
-				__updateArrows__(node_id)
-			elif old_click_status == GUI.CLICK_STATUS_DISABLE:
-				self.gfx["node_click_status"][node_id] = GUI.CLICK_STATUS_IDLE
-			else:
-				print("# erroneous click status {} on node_id {}".format(old_click_status, node_id))
+			if self.gfx["actions_toggle_arrows"]:
+				self.gfx["nodewise_arrow_status"][node_id] = not self.gfx["nodewise_arrow_status"][node_id]
+				__drawNodewiseArrows__(node_id)
+				if not self.gfx["nodewise_arrow_status"][node_id]:
+					for arrow_gfx in self.gfx["nodewise_arrow_gfx"][node_id]:
+						__updateArrowAlpha__(arrow_gfx, hide_arrows=True)
 			self.fig.canvas.draw()
 			return
 		
 
+		def __onHoverNode__(event):
+			if event.inaxes == self.ax:
+				new_id = None
+				for node_gfx in self.gfx["node_gfx"].values():
+					cont, ind = node_gfx.contains(event)
+					if cont:
+						new_id = int(str((node_gfx.get_url())))
+						break
+				curr_id = self.gfx["highlighted_node"]
+				if curr_id == new_id:
+					return
+				if curr_id != None:
+					curr_gfx = self.gfx["node_gfx"][curr_id]
+					curr_gfx.radius = GUI.dim_node_rad
+					curr_gfx.linewidth = GUI.dim_node_lw
+					self.gfx["highlighted_text"].remove()
+				if new_id != None:
+					new_gfx = self.gfx["node_gfx"][new_id]
+					new_gfx.radius = GUI.dim_node_rad_h
+					new_gfx.linewidth = GUI.dim_node_lw_h
+					self.gfx["highlighted_text"] = self.ax.text(
+						new_gfx._center[0], 
+						new_gfx._center[1] + 1, 
+						str(new_id), 
+						weight="bold",
+						horizontalalignment="center")
+				self.gfx["highlighted_node"] = new_id
+				self.fig.canvas.draw()
+			return
+
+		
 		__drawNodes__()
 		time_slider.on_changed(__updateCurrTime__)
 		radio_detector.on_clicked(__updateDetector__)
 		radio_loc_val.on_clicked(__updateLocValProcedure__)
+		check_actions.on_clicked(__updateActions__)
+		reported_loc.on_clicked(__toggleReportedPos__)
 		if self.loc_val_data != {}:
 			__updateLocValProcedure__(list(self.loc_val_data.keys())[0])
-		self.fig.canvas.mpl_connect("pick_event", __updateNodeStatus__)
+		self.fig.canvas.mpl_connect("pick_event", __onClickNode__)
+		self.fig.canvas.mpl_connect("motion_notify_event", __onHoverNode__)
 		plt.show()
