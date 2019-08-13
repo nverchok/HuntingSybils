@@ -85,7 +85,7 @@ if __name__ == "__main__":
 	p("dissemination done")
 	id2edges = graph.formEdges(sim_conns_modified, potential_conns, key2idx)
 	p("edges formed")
-	results = SybilDetection.runDetectionAlgorithms(nodes_val, id2edges)
+	results = SybilDetection.runDetectionAlgorithms(nodes_val, id2edges, active_detectors={SybilDetection.D_SIMP, SybilDetection.D_RANK})
 	p("detection run")
 
 	g2 = graph

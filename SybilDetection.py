@@ -9,8 +9,8 @@ class SybilDetection:
 	multiple algorithms, and evaluate the results. """
 	D_SIMP = "Simple"
 	D_ITER = "Iterative"
-	D_PRED = "Sybil-Predict"
-	D_RANK = "Sybil-Rank"
+	D_PRED = "Syb-Predict"
+	D_RANK = "Syb-Rank"
 	all_detectors = {D_SIMP, D_ITER, D_PRED, D_RANK}
 
 
@@ -36,7 +36,6 @@ class SybilDetection:
 		D_RANK = SybilDetection.D_RANK
 		results = {}
 
-		graph_analysis = GraphAnalysis(nodes_val, id_to_edges)
 		val_all_ids = {node.id for node in nodes_val}
 		val_syb_ids = {node.id for node in nodes_val if node.type == "syb"}
 		val_mal_ids = {node.id for node in nodes_val if node.type == "mal"}
@@ -45,7 +44,7 @@ class SybilDetection:
 
 		if D_SIMP in active_detectors:
 			results[D_SIMP] = {}
-			simp_syb_ids, simp_pvals = graph_analysis.simpleSybilDetection()
+			simp_syb_ids, simp_pvals = GraphAnalysis.simpleSybilDetection(nodes_val, id_to_edges)
 			simp_results = sypy.Results(val_node_ids=val_all_ids, true_syb_ids=val_syb_ids, true_mal_ids=val_mal_ids, pred_syb_ids=simp_syb_ids)
 			results[D_SIMP]["matrix"] = SybilDetection.__genResultString__(simp_results)
 			results[D_SIMP]["id_to_pval"] = simp_pvals
@@ -53,7 +52,7 @@ class SybilDetection:
 		
 		if D_ITER in active_detectors:
 			results[D_ITER] = {}
-			iter_syb_ids, iter_pvals = graph_analysis.iterativeSybilDetection()
+			iter_syb_ids, iter_pvals = GraphAnalysis.iterativeSybilDetection(nodes_val, id_to_edges)
 			iter_results = sypy.Results(val_node_ids=val_all_ids, true_syb_ids=val_syb_ids, true_mal_ids=val_mal_ids, pred_syb_ids=iter_syb_ids)
 			results[D_ITER]["matrix"] = SybilDetection.__genResultString__(iter_results)
 			results[D_ITER]["id_to_pval"] = iter_pvals

@@ -5,29 +5,11 @@ class GraphAnalysis:
 	""" A collection of algorithms for Sybil detection that rely on the probabilistic
 	model for P2P connection success as a function of pairwise distance. """
 	simp_det_thresh = 1/3500000
-	iter_det_thresh = 1/1000
-
-
-	@staticmethod
-	def setSimpDetThresh(simp_det_thresh):
-		""" Sets the p-value threshold used in the Simple detection algorithm. """
-		GraphAnalysis.simp_det_thresh = simp_det_thresh
-
-
-	@staticmethod
-	def setIterDetThresh(iter_det_thresh):
-		""" Sets the p-value threshold used in the Iterative detection algorithm. """
-		GraphAnalysis.iter_det_thresh = iter_det_thresh
-
-
-	def __init__(self, nodes, id_to_edges):
-		""" Internal. Stores the array of nodes and edge-lists (similarly indexed). """
-		self.nodes = nodes
-		self.id_to_edges = id_to_edges
-		self.num_nodes = len(self.nodes)
+	iter_det_thresh = 1/100000
 
 	
-	def __getEvalDistProb__(self, dist):
+	@staticmethod
+	def __getEvalDistProb__(dist):
 		""" Internal. Gives the probability of a connection succeeding given a 
 		specific distance (based on exact experimental evidence). """
 		raw_exp_x = [(25*i - 12.5) for i in range(13)]
@@ -35,7 +17,8 @@ class GraphAnalysis:
 		return np.interp(dist, raw_exp_x, raw_exp_y, left=1.0, right=0.0)
 
 	
-	def __calcNodePval__(self, edges, ignored_ids=set()):
+	@staticmethod
+	def __calcNodePval__(edges, ignored_ids=set()):
 		""" Internal. Calculates the distribution of the sum of Edges (treated
 		as binary random variables), and finds the left p-value of the observed
 		log-likelihood sum. Ignores edges originating at ignored nodes. """
@@ -44,7 +27,7 @@ class GraphAnalysis:
 		var_sum = 0
 		for edge in edges:
 			if edge.node_src.id not in ignored_ids:
-				llh, exp, var = edge.calcStatData(self.__getEvalDistProb__)
+				llh, exp, var = edge.calcStatData(GraphAnalysis.__getEvalDistProb__)
 				obs_llh += llh
 				exp_sum += exp
 				var_sum += var
@@ -53,27 +36,30 @@ class GraphAnalysis:
 		return pval, obs_llh
 	
 
-	def __calcPvals__(self, ignored_ids=set()):
+	@staticmethod
+	def __calcPvals__(nodes, id_to_edges, ignored_ids=set()):
 		""" Internal. Returns an array of left tail p-values for the nodes. """
 		pvals = {}
-		for node in self.nodes:
+		for node in nodes:
 			if node.id not in ignored_ids:
-				pval, llh = self.__calcNodePval__(self.id_to_edges[node.id], ignored_ids=ignored_ids)
+				pval, llh = GraphAnalysis.__calcNodePval__(id_to_edges[node.id], ignored_ids=ignored_ids)
 				pvals[node.id] = pval
 		return pvals
 
 
-	def simpleSybilDetection(self):
+	@staticmethod
+	def simpleSybilDetection(nodes, id_to_edges):
 		""" Labels Sybil all nodes whose p-values are below the threshold. """
 		syb_ids = set()
-		pvals = self.__calcPvals__()
+		pvals = GraphAnalysis.__calcPvals__(nodes, id_to_edges)
 		for node_id, pval in pvals.items():
 			if pval < GraphAnalysis.simp_det_thresh:
 				syb_ids |= {node_id}
 		return syb_ids, pvals
 	
 
-	def iterativeSybilDetection(self):
+	@staticmethod
+	def iterativeSybilDetection(nodes, id_to_edges):
 		""" Iteratively computes all p-values, labelling the most unlikely node
 		as a Sybil if its LLH is below the threshold. If such a Sybil is found,
 		then it is added to the ignored set and the procedure repeats. Procedure
@@ -82,8 +68,8 @@ class GraphAnalysis:
 		all LLHs to account for the newfound absense of these Sybils."""
 		syb_ids = set()
 		pvals = {}
-		while len(syb_ids) < 1*self.num_nodes:
-			temp_pvals = self.__calcPvals__(ignored_ids=syb_ids)
+		while len(syb_ids) < 0.5*len(nodes):
+			temp_pvals = GraphAnalysis.__calcPvals__(nodes, id_to_edges, ignored_ids=syb_ids)
 			min_id = min(temp_pvals.items(), key=lambda x:x[1])[0]
 			if temp_pvals[min_id] < GraphAnalysis.iter_det_thresh:
 				syb_ids |= {min_id}
