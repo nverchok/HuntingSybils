@@ -50,6 +50,7 @@ class GUI:
 
 		self.gfx = {}
 		self.gfx["val_circle"] = None
+		self.gfx["val_time_text"] = None
 		self.gfx["sl_curr_time"] = None
 		self.gfx["rb_detectors"] = None
 		self.gfx["ax_rb_detectors"] = None
@@ -108,6 +109,7 @@ class GUI:
 		""" Stores the data associated with a location validation procedure. Thus
 		multiple location validation procedures may be plotted at once, viewed one
 		at a time (but swapped-between dynamically). """
+		val_label = "\"" + val_label + "\""
 		self.loc_val_data[val_label] = {
 			"detectors": list(results.keys()),
 			"graph": graph_gen,
@@ -149,6 +151,7 @@ class GUI:
 		ax_sl_curr_time.set_xticks(list(range(Node.max_time)), minor=False)
 		sl_curr_time = Slider(ax_sl_curr_time, "Time", 0, self.max_time, valinit=0, closedmin=True, closedmax=True)
 		sl_curr_time.valstep = GUI.cfg_time_step
+		sl_curr_time.valtext._text += "s"
 		self.gfx["sl_curr_time"] = sl_curr_time
 
 		ax_rb_val_label = plt.axes([0.01, 0.70, 0.12, 0.22], facecolor=GUI.col_menu_axes, frameon=True)
@@ -227,19 +230,24 @@ class GUI:
 			""" Updates the visual representation of the location validation are
 			(i.e. a large circle), showing it only while the procedure is in progress
 			and hiding it before and after the procedure. """
-			rad_gfx = self.gfx["val_circle"]
+			circle_gfx = self.gfx["val_circle"]
+			time_text_gfx = self.gfx["val_time_text"]
 			graph = self.curr_val_data["graph"]
 			time_start = graph.time_start
 			time_end = graph.time_end
 			if self.curr_time < time_start:
-				rad_gfx.set_alpha(0.1)
+				circle_gfx.set_alpha(0.1)
+				time_text_gfx.set_alpha(0.3)
 			elif self.curr_time < time_end:
-				rad_gfx.set_alpha(1)
+				circle_gfx.set_alpha(1)
+				time_text_gfx.set_alpha(1)
 			elif self.curr_time < time_end + GUI.cfg_fade_time:
-				new_alpha = max(1-((self.curr_time - time_end)/GUI.cfg_fade_time)**0.5,0.1)
-				rad_gfx.set_alpha(new_alpha)
+				new_alpha = 1-((self.curr_time - time_end)/GUI.cfg_fade_time)**0.5
+				circle_gfx.set_alpha(max(new_alpha,0.1))
+				time_text_gfx.set_alpha(max(new_alpha,0.3))
 			else:
-				rad_gfx.set_alpha(0.1)
+				circle_gfx.set_alpha(0.1)
+				time_text_gfx.set_alpha(0.3)
 			return
 		
 
@@ -273,6 +281,7 @@ class GUI:
 			triggers further updates of the location validation radius and all existing
 			arrow objects. """
 			self.curr_time = float(val)
+			self.gfx["sl_curr_time"].valtext._text += "s"
 			__updateValCircleAlpha__()
 			__updateNodes__()
 			for arrow_gfx_list in self.gfx["id_to_arrows_gfx"].values():
@@ -316,6 +325,7 @@ class GUI:
 			self.curr_val_data = self.loc_val_data[val_label]
 			if self.gfx["val_circle"] != None:
 				self.gfx["val_circle"].remove()
+				self.gfx["val_time_text"].remove()
 			graph = self.loc_val_data[val_label]["graph"]
 			new_val_rad = Circle(
 				graph.val_pos, 
@@ -327,6 +337,13 @@ class GUI:
 				fill=False)
 			self.gfx["val_circle"] = new_val_rad
 			self.ax.add_patch(new_val_rad)
+			self.gfx["val_time_text"] = self.ax.text(
+				graph.val_pos[0], 
+				graph.val_pos[1] + graph.val_rad + 2, 
+				"{}s \u2013 {}s".format(graph.time_start, graph.time_end),
+				color=GUI.col_loc_val_radius,
+				weight="bold",
+				horizontalalignment="center")
 			__updateValCircleAlpha__()
 			for arrow_gfx_list in self.gfx["id_to_arrows_gfx"].values():
 				for arrow_gfx in arrow_gfx_list:
