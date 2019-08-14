@@ -63,12 +63,14 @@ class SybilDetection:
 			pred_results = sypy.SybilPredictDetector(network, pivot=val_syb_fraction).detect()
 			results[D_PRED]["matrix"] = SybilDetection.__genResultString__(pred_results)
 			results[D_PRED]["id_to_type"] = {node_id:("sybil" if node_id in pred_results.pred_syb_ids else "non-sybil") for node_id in val_all_ids}
+			results[D_PRED]["init_syb_ids"] = pred_results.initial_sybils
 
 		if D_RANK in active_detectors:
 			results[D_RANK] = {}
 			rank_results = sypy.SybilPredictDetector(network, pivot=val_syb_fraction).detect()
 			results[D_RANK]["matrix"] = SybilDetection.__genResultString__(rank_results)
 			results[D_RANK]["id_to_type"] = {node_id:("sybil" if node_id in rank_results.pred_syb_ids else "non-sybil") for node_id in val_all_ids}
+			results[D_RANK]["init_syb_ids"] = rank_results.initial_sybils
 
 		# comp = {
 		# 	node.id: (

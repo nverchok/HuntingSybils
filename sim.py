@@ -44,9 +44,9 @@ if __name__ == "__main__":
 	
 	Node.setMaxTime(50)
 	node_sim = NodeSim(terrain, Node.max_time)
-	nodes_hon = node_sim.genNodeGroup(100, (0,0,terrain.width,terrain.height), lambda x: (x[0],0), "hon")
-	nodes_syb = node_sim.genNodeGroup(15, (34,22,12,8), lambda x: (np.random.normal(2.6,0.35),0), "syb")
-	nodes_mal = node_sim.genNodeGroup(8, (34,22,14,8), lambda x: (np.random.normal(2.6,0.35),0), "mal")
+	nodes_hon = node_sim.genNodeGroup(10, (0,0,terrain.width,terrain.height), lambda x: (x[0],0), "hon")
+	nodes_syb = node_sim.genNodeGroup(3, (34,22,12,8), lambda x: (np.random.normal(2.6,0.35),0), "syb")
+	nodes_mal = node_sim.genNodeGroup(2, (34,22,14,8), lambda x: (np.random.normal(2.6,0.35),0), "mal")
 
 	nodes_all = np.concatenate([nodes_hon, nodes_syb, nodes_mal])
 	id2node = {node.id:node for node in nodes_all}

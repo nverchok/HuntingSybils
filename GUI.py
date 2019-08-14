@@ -300,6 +300,10 @@ class GUI:
 			for node in self.id_to_node.values():
 				node_gfx = self.gfx["node_gfx"][node.id]
 				node_gfx.set_ec(self.__getNodeEdgeColor__(node.id))
+			if "init_syb_ids" in self.curr_det_results:
+				for node_id in self.id_to_node:
+					new_alpha = 0.2 if node_id in self.curr_det_results["init_syb_ids"] else 1
+					self.gfx["node_gfx"][node_id].set_alpha(new_alpha)
 			print("Detector: {}\n{}".format(det_label, self.curr_det_results["matrix"]))
 			self.fig.canvas.draw()
 			return
