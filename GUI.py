@@ -7,7 +7,7 @@ from matplotlib.widgets import Slider
 from matplotlib.widgets import RadioButtons
 from matplotlib.widgets import CheckButtons
 from Utils import *
-from CurveAnalysis import *
+from GraphAnalysis import *
 import pprint
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -32,12 +32,15 @@ class GUI:
 		"sybil": "darkred",
 		"unknown": "darkgrey"
 	}
+	col_plot_cmaps = {
+		"hon": matplotlib.cm.BuGn,
+		"syb": matplotlib.cm.Reds,
+		"mal": matplotlib.cm.autumn
+	}
 	dim_node_rad = 0.38
 	dim_node_rad_h = 0.55
 	dim_node_lw = 1.5
 	dim_node_lw_h = 2.25
-	
-
 
 
 	def __init__(self, terrain, id_to_node):
@@ -70,9 +73,16 @@ class GUI:
 		self.curr_det_label = None
 		self.curr_det_results = None
 		self.curr_time = 0
+
+		self.gra_figs = {}
+		self.gra_axes = {}
+		self.gra_objs = {}
+		self.gra_rcol = 0
+		self.gra_idx = 1
 	
 
 	def __printGreeting__(self):
+		""" A nice hello string. """
 		print("\n  ______________________\n  | SIMULATOR LAUNCHED |\n  "+"\u203E"*22+"\n")
 		return
 	
@@ -99,10 +109,46 @@ class GUI:
 
 	def __getNodePval__(self, node_id):
 		""" Returns the pval of a node if available. """
-		if self.curr_det_results != None and "id_to_pval" in self.curr_det_results:
-			return str(self.curr_det_results["id_to_pval"][node_id])
+		return str(self.curr_det_results["id_to_pval"].get(node_id, "N/A"))
+	
+
+	def __getFigData__(self, fig_idx):
+		""" Returns the figure, axes, and drawn-object dict of the specific
+		index, creating them if they do not already exist. """
+		DIST_MAX = 100
+		NUM_TICKS = 20
+		if fig_idx not in self.gra_figs:
+			fig = plt.figure(figsize=(6,3))
+			ax = fig.add_axes(
+				(0.1, 0.2, 0.70, 0.75),
+				frameon=False,
+				xlim=(0, DIST_MAX),
+				ylim=(0.0, 1.0),
+				xlabel="distance (m)",
+				ylabel="P(conn success)")	
+			objs = {}
+			ax.set_xticks([i*(DIST_MAX//NUM_TICKS) for i in range(NUM_TICKS+1)], minor=False)
+			ax.xaxis.set_visible(True)
+			self.gra_figs[fig_idx] = fig
+			self.gra_axes[fig_idx] = ax
+			self.gra_objs[fig_idx] = objs
 		else:
-			return "N/A"
+			fig = self.gra_figs[fig_idx]
+			ax = self.gra_axes[fig_idx]
+			objs = self.gra_objs[fig_idx]
+		return fig, ax, objs
+	
+
+	def __getPlotColor__(self, node_id):
+		""" Returns the color to use for plotting a scatterplot for a given node.
+		Sybil nodes use warm colors (yellow/orange/red) while none-Sybils (i.e.
+		honest and malicious nodes) use cool colors (green/blue). """
+		node_type = self.id_to_node[node_id].type
+		color = GUI.col_plot_cmaps[node_type](self.gra_rcol)
+		self.gra_rcol = (self.gra_rcol + 71) % 256
+		while self.gra_rcol < 128:
+			self.gra_rcol = (self.gra_rcol + 71) % 256
+		return color
 
 
 	def addLocVal(self, val_label, graph_gen, id_to_edges, results):
@@ -112,7 +158,7 @@ class GUI:
 		val_label = "\"" + val_label + "\""
 		self.loc_val_data[val_label] = {
 			"detectors": list(results.keys()),
-			"graph": graph_gen,
+			"graph_data": graph_gen,
 			"id_to_edges": id_to_edges,
 			"results": results
 		}
@@ -123,8 +169,28 @@ class GUI:
 		self.curr_det_results = results[initial_det_label]
 		return
 
+	
+	def plotLHCurves(self, X, Ys, Y_RANSAC=None, fig_idx=0):
+		""" Creates a standalone plotting area (corresponding to the fig_idx) and
+		scatter-plots all curves from the Ys list. Also line-plots the Y_RANSAC
+		curve if such is provided. """
+		fig, ax, objs = self.__getFigData__(fig_idx)
+		for node_id, y in Ys.items():
+			if node_id not in objs:
+				color = self.__getPlotColor__(node_id)
+				objs[node_id] = ax.scatter(X, y, label=(None if Y_RANSAC else node_id), color=color, marker='_')
+			else:
+				artist_list = objs.pop(node_id)
+				for artist in artist_list:
+					artist.remove()
+		if Y_RANSAC != None:
+			ax.plot(X, Y_RANSAC, label="RANSAC", color="blue")
+			ax.plot(X, [GraphGen.simu_dist_prob_fun(x) for x in X], label="Truth", color="black")
+		ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+		fig.show()
 
-	def draw(self):
+
+	def drawSim(self):
 		""" Executes the drawing. """
 		self.__printGreeting__()
 		self.fig = plt.figure(figsize=GUI.cfg_figsize)
@@ -155,14 +221,17 @@ class GUI:
 		self.gfx["sl_curr_time"] = sl_curr_time
 
 		ax_rb_val_label = plt.axes([0.01, 0.70, 0.12, 0.22], facecolor=GUI.col_menu_axes, frameon=True)
+		ax_rb_val_label.set_title("Loc. Val. Procedure", fontsize=8)
 		rb_val_label = RadioButtons(ax_rb_val_label, tuple(self.loc_val_data.keys()))
 		
-		ax_rb_detectors = plt.axes([0.01, 0.40, 0.12, 0.25], facecolor=GUI.col_menu_axes, frameon=True)
+		ax_rb_detectors = plt.axes([0.01, 0.40, 0.12, 0.25], facecolor=GUI.col_menu_axes, frameon=True, title="Detector:")
+		ax_rb_detectors.set_title("Detector", fontsize=8)
 		rb_detectors = RadioButtons(ax_rb_detectors, tuple())
 		self.gfx["rb_detectors"] = rb_detectors
 		self.gfx["ax_rb_detectors"] = ax_rb_detectors
 
 		ax_cb_actions = plt.axes([0.01, 0.15, 0.12, 0.20], facecolor=GUI.col_menu_axes, frameon=True)
+		ax_cb_actions.set_title("Node click actions", fontsize=8)
 		cb_actions = CheckButtons(ax_cb_actions, ("cdf", "pval", "arrows"), (False, False, False))
 
 		ax_cb_options = plt.axes([0.01, 0.00, 0.12, 0.15], facecolor=GUI.col_menu_axes, frameon=False)
@@ -191,11 +260,16 @@ class GUI:
 			return
 		
 
-		def __drawNodeCDF__(node_id):
+		def __drawNodePDF__(node_id):
+			""" Draws the PDF for the given node. """
 			id_to_edges = self.curr_val_data["id_to_edges"]
-			edges = id_to_edges[node_id]
-			xvals, cdf = CurveAnalysis.calcNodeConnCDF(edges)
-			CurveAnalysis.plotCDF(self.id_to_node[node_id], xvals, cdf)
+			X, Y = GraphAnalysis.calcNodeLHCurve(id_to_edges[node_id])
+			Ys = {node_id:Y}
+			Y_RANSAC = None
+
+			x, Ys, Y_RANSAC = GraphAnalysis.calcGlobalLHCurves(self.id_to_node, id_to_edges)
+			self.gra_idx += 1
+			self.plotLHCurves(X, Ys, Y_RANSAC=Y_RANSAC, fig_idx=self.gra_idx)
 			return
 
 		
@@ -208,7 +282,10 @@ class GUI:
 				for edge in edges:
 					pos1 = edge.node_src.getPos(edge.time, reported_pos=self.gfx["options_use_rep_loc"])
 					pos2 = edge.node_dst.getPos(edge.time, reported_pos=self.gfx["options_use_rep_loc"])
-					x, y, dx, dy = (pos2[0], pos2[1], pos1[0]-pos2[0], pos1[1]-pos2[1])
+					x = pos2[0]
+					y = pos2[1]
+					dx = pos1[0]-pos2[0] if pos1[0]-pos2[0]!=0 else 0.01
+					dy = pos1[1]-pos2[1] if pos1[1]-pos2[1]!=0 else 0.01
 					col = self.__getArrowColor__(edge)
 					arrow_gfx = self.ax.arrow(
 						x, y, dx, dy, 
@@ -230,9 +307,11 @@ class GUI:
 			""" Updates the visual representation of the location validation are
 			(i.e. a large circle), showing it only while the procedure is in progress
 			and hiding it before and after the procedure. """
+			if self.curr_val_label == None:
+				return
 			circle_gfx = self.gfx["val_circle"]
 			time_text_gfx = self.gfx["val_time_text"]
-			graph = self.curr_val_data["graph"]
+			graph = self.curr_val_data["graph_data"]
 			time_start = graph.time_start
 			time_end = graph.time_end
 			if self.curr_time < time_start:
@@ -270,6 +349,8 @@ class GUI:
 		
 
 		def __updateNodes__():
+			""" Updates all node positions to the current time. True vs Reported location
+			is toggled by the 'options_use_rep_loc' setting. """
 			for node in self.id_to_node.values():
 				node_gfx = self.gfx["node_gfx"][node.id]
 				node_gfx.center = node.getPos(self.curr_time, reported_pos=self.gfx["options_use_rep_loc"])
@@ -304,7 +385,7 @@ class GUI:
 				for node_id in self.id_to_node:
 					new_alpha = 0.2 if node_id in self.curr_det_results["init_syb_ids"] else 1
 					self.gfx["node_gfx"][node_id].set_alpha(new_alpha)
-			print("Detector: {}\n{}".format(det_label, self.curr_det_results["matrix"]))
+			print("Detector: {}\n{}".format(det_label, self.curr_det_results["res_string"]))
 			self.fig.canvas.draw()
 			return
 
@@ -315,6 +396,7 @@ class GUI:
 			Triggers a UI update indirectly through __updateDetector__()."""
 			self.gfx["rb_detectors"].disconnect(0)
 			self.gfx["ax_rb_detectors"].cla()
+			self.gfx["ax_rb_detectors"].set_title("Detector", fontsize=8)
 			self.gfx["rb_detectors"] = RadioButtons(self.gfx["ax_rb_detectors"], det_list)
 			self.gfx["rb_detectors"].on_clicked(__updateDetector__)
 			__updateDetector__(det_list[0])
@@ -330,7 +412,7 @@ class GUI:
 			if self.gfx["val_circle"] != None:
 				self.gfx["val_circle"].remove()
 				self.gfx["val_time_text"].remove()
-			graph = self.loc_val_data[val_label]["graph"]
+			graph = self.loc_val_data[val_label]["graph_data"]
 			new_val_rad = Circle(
 				graph.val_pos, 
 				radius=graph.val_rad, 
@@ -358,7 +440,8 @@ class GUI:
 			return
 
 		
-		def __updateActions__(action_label):
+		def __toggleActions__(action_label):
+			""" Updates the node-clicking action that has been toggled. """
 			action_str = "actions_toggle_" + action_label
 			self.gfx[action_str] = not self.gfx[action_str]
 			return
@@ -393,7 +476,7 @@ class GUI:
 				return
 			node_id = int(str(event.artist.get_url()))
 			if self.gfx["actions_toggle_cdf"]:
-				__drawNodeCDF__(node_id)
+				__drawNodePDF__(node_id)
 			if self.gfx["actions_toggle_pval"]:
 				print("Node: {}, pval={}".format(node_id, self.__getNodePval__(node_id)))
 			if self.gfx["actions_toggle_arrows"]:
@@ -404,6 +487,8 @@ class GUI:
 		
 
 		def __onHoverNode__(event):
+			""" Handles node-hover events by slightly increasing the hovered-over-node's
+			size, as well as by displaying the node's ID above it as floating text. """
 			if event.inaxes == self.ax:
 				new_id = None
 				for node_gfx in self.gfx["node_gfx"].values():
@@ -438,7 +523,7 @@ class GUI:
 		sl_curr_time.on_changed(__updateCurrTime__)
 		rb_detectors.on_clicked(__updateDetector__)
 		rb_val_label.on_clicked(__updateValLabel__)
-		cb_actions.on_clicked(__updateActions__)
+		cb_actions.on_clicked(__toggleActions__)
 		cb_options.on_clicked(__toggleOptions__)
 		if self.loc_val_data != {}:
 			__updateValLabel__(list(self.loc_val_data.keys())[0])

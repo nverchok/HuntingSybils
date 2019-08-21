@@ -22,7 +22,7 @@ class NodeSim:
 		self.nodes_all = []
 
 
-	def genNodeGroup(self, num_nodes, cluster_dims, vel_lim_fn=lambda x: x, node_type="hon", have_collision=True):
+	def genNodeGroup(self, num_nodes, cluster_dims, vel_lim_fn=lambda x: x, node_type="hon", collision=True):
 		""" Creates an array of Node objects that have been randomly generated within
 		a specified cluster, with random velocities that have been constrained by a
 		provided velocity function. The nodes assume the specified type, and are spawned
@@ -38,7 +38,7 @@ class NodeSim:
 				if x >= r[0] and y >= r[1] and x <= r[0]+r[2] and y <= r[1]+r[3]:
 					valid = False
 					break
-			if have_collision:
+			if collision:
 				for z in self.nodes_all:
 					pos = z.getPos(0)
 					dx = x - pos[0]

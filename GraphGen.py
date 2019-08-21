@@ -2,6 +2,7 @@ from Utils import *
 import math
 import numpy as np
 import random
+import pprint
 
 class GraphGen:
 	""" A class encompassing a single instance of a location validation process.
@@ -12,6 +13,12 @@ class GraphGen:
 	plan and simulated establishing connections based on the distance-probabilistic
 	model and node types. The formEdges() function creates a list of Edge objects
 	created per node by a particular simulation of a communication plan. """
+	simu_dist_prob_fun = lambda dist: np.interp(
+		dist, 
+		[(25*i - 12.5) for i in range(13)], 
+		[1.000, 0.800, 0.650, 0.900, 0.354, 0.258, 0.196, 0.142, 0.092, 0.058, 0.042, 0.021, 0.017], 
+		left=0.95, 
+		right=0.01)
 
 
 	def __init__(self, nodes_all, val_time, val_pos, val_rad, round_duration=2, syb_mal_mult=0.6, syb_syb_mult=0.6):
@@ -21,10 +28,10 @@ class GraphGen:
 		self.val_time = val_time
 		self.val_pos = val_pos
 		self.val_rad = val_rad
-		self.nodes = Utils.getLocValSet(nodes_all, val_time, val_pos, val_rad)
+		self.nodes_val = self.__getLocValSet__()
 		self.time_start = val_time
 		self.round_duration = round_duration
-		self.num_nodes = len(self.nodes)
+		self.num_nodes = len(self.nodes_val)
 		self.num_rounds = int(2*math.ceil(math.log(self.num_nodes,2))) if self.num_nodes >= 2 else 0
 		self.time_end = self.time_start + self.num_rounds*self.round_duration
 		self.conn_prob_mult = {
@@ -40,6 +47,21 @@ class GraphGen:
 		}
 	
 
+	def __getLocValSet__(self):
+		""" Internal. Returns an array of nodes that will be involved in a 
+		location validation procedure. Membership is determined by euclidean 
+		proximity from the center at start time, based on their *last reported* 
+		(not always true) location. """
+		nodes_temp = []
+		cx, cy = self.val_pos
+		for node in self.nodes_all:
+			nx, ny = node.getPos(self.val_time, reported_pos=True)
+			if (nx-cx)**2 + (ny-cy)**2 <= self.val_rad**2:
+				nodes_temp += [node]
+		nodes = np.array(nodes_temp)
+		return nodes
+	
+
 	def __recGenStates__(self, incomplete_comm_plan, depth, bgn, end):
 		""" Internal. Recursively fills out an incomplete communication plan by 
 		replacing default "listen" values with randomly generated unique key strings. 
@@ -48,20 +70,14 @@ class GraphGen:
 			return
 		mid = (bgn+end)//2
 		incomplete_comm_plan[bgn:mid,depth] = self.keygen.genKeys(mid-bgn)
+		incomplete_comm_plan[mid:end,depth] = "listen"
+		incomplete_comm_plan[bgn:mid,depth+1] = "listen"
 		incomplete_comm_plan[mid:end,depth+1] = self.keygen.genKeys(end-mid)
 		if depth+2 < self.num_rounds:
 			if(mid-bgn > 1):
 				self.__recGenStates__(incomplete_comm_plan, depth+2, bgn, mid)
 			if(end-mid > 1):
 				self.__recGenStates__(incomplete_comm_plan, depth+2, mid, end)
-	
-
-	def __getSimuDistProb__(self, dist):
-		""" Internal. Gives the probability of a connection succeeding given a 
-		specific distance (based on exact experimental evidence). """
-		raw_exp_x = [(25*i - 12.5) for i in range(13)]
-		raw_exp_y = [1.000, 0.800, 0.650, 0.500, 0.354, 0.258, 0.196, 0.142, 0.092, 0.058, 0.042, 0.021, 0.017]
-		return np.interp(dist, raw_exp_x, raw_exp_y, left=1.0, right=0.0)
 	
 
 	def __getRoundTime__(self, rnd):
@@ -74,7 +90,7 @@ class GraphGen:
 		""" Internal. Attempts to establish a connection by flipping a coin biased
 		according to the node types and separating distance at the *true* time. """
 		dist = Node.getDist(node1, node2, time, reported_pos=False)
-		prob = self.__getSimuDistProb__(dist)
+		prob = GraphGen.simu_dist_prob_fun(dist)
 		return np.random.random() <= prob * self.conn_prob_mult[(node1.type,node2.type)]
 	
 
@@ -84,7 +100,7 @@ class GraphGen:
 		In every round, a node either listens or broadcasts its key. """
 		if self.num_nodes < 2:
 			return None, None, None
-		comm_plan = np.full((self.num_nodes, self.num_rounds), "listen")
+		comm_plan = np.full((self.num_nodes, self.num_rounds), "_done_")
 		key_to_idx = {}
 		self.keygen = KeyGen()
 		self.__recGenStates__(comm_plan, 0, 0, self.num_nodes)
@@ -95,10 +111,11 @@ class GraphGen:
 			bdcaster_set = []
 			for i in range(self.num_nodes):
 				potential_conns[i,rnd] = []
-				if comm_plan[i,rnd] == "listen":
-					listener_set += [i]
-				else:
-					bdcaster_set += [i]
+				if comm_plan[i,rnd] != "_done_":
+					if comm_plan[i,rnd] == "listen":
+						listener_set += [i]
+					else:
+						bdcaster_set += [i]
 			for i in listener_set:
 				for j in bdcaster_set:
 					bdcaster_key = comm_plan[j,rnd]
@@ -112,24 +129,24 @@ class GraphGen:
 		every (listener, broadcaster) tuple, attempt to establish a connection by
 		flipping a biased coin based on distance, and the two node types. Returns
 		a 2D array of #nodes*#rounds, with each entry being a list of seen keys. """
-		num_nodes, num_rounds = comm_plan.shape
-		if num_nodes < 2:
+		if self.num_nodes < 2:
 			return None
-		simulated_conns = np.ndarray((num_nodes, num_rounds), dtype=object)
-		for rnd in range(num_rounds):
+		simulated_conns = np.ndarray((self.num_nodes, self.num_rounds), dtype=object)
+		for rnd in range(self.num_rounds):
 			time = self.__getRoundTime__(rnd)
 			listener_set = []
 			bdcaster_set = []
-			for i in range(num_nodes):
+			for i in range(self.num_nodes):
 				simulated_conns[i,rnd] = []
-				if comm_plan[i,rnd] == "listen":
-					listener_set += [i]
-				else:
-					bdcaster_set += [i]
+				if comm_plan[i,rnd] != "_done_":
+					if comm_plan[i,rnd] == "listen":
+						listener_set += [i]
+					else:
+						bdcaster_set += [i]
 			for i in listener_set:
 				for j in bdcaster_set:
-					listen_node = self.nodes[i]
-					bdcast_node = self.nodes[j]
+					listen_node = self.nodes_val[i]
+					bdcast_node = self.nodes_val[j]
 					conn_successful = self.__attemptConn__(listen_node, bdcast_node, time)
 					if conn_successful:
 						simulated_conns[i,rnd] += [comm_plan[j,rnd]]
@@ -144,12 +161,12 @@ class GraphGen:
 			return None
 		id_to_edges = {}
 		num_attempts = {}
-		for node in self.nodes:
+		for node in self.nodes_val:
 			id_to_edges[node.id] = []
 		for rnd in range(self.num_rounds):
 			time = self.__getRoundTime__(rnd)
 			for i in range(self.num_nodes):
-				node_src = self.nodes[i]
+				node_src = self.nodes_val[i]
 				node_potl_conns = {key_to_idx[key] for key in potential_conns[i,rnd]}
 				node_simu_conns = {key_to_idx[key] for key in simulated_conns[i,rnd]}
 				for j in node_potl_conns:
@@ -158,7 +175,7 @@ class GraphGen:
 					else:
 						num_attempts[(i,j)] += 1
 					if num_attempts[(i,j)] <= max_attempts:
-						node_dst = self.nodes[j]
+						node_dst = self.nodes_val[j]
 						successful = j in node_simu_conns
 						id_to_edges[node_dst.id] += [Edge(node_src, node_dst, time, successful)]
 		return id_to_edges

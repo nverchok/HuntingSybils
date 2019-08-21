@@ -47,7 +47,7 @@ class Results:
         FN = len(set.intersection(pred_hon,true_syb))
         TP = len(set.intersection(pred_syb,true_syb))
         FP = len(set.intersection(pred_syb,true_hon))
-        TPR_mal = len(set.intersection(self.pred_syb_ids,self.true_mal_ids))/len(self.true_mal_ids)
+        TPR_mal = len(set.intersection(self.pred_syb_ids,self.true_mal_ids))/len(self.true_mal_ids) if len(self.true_mal_ids) != 0 else 0
         
         confusion_matrix = {
             "N": N,
@@ -74,7 +74,7 @@ class Results:
 
     def accuracy(self):
         cm = self.confusion_matrix
-        return (cm["TP"] + cm["TN"])/(float)(cm["P"] + cm["N"])
+        return (cm["TP"] + cm["TN"])/(float)(cm["P"]+cm["N"])
 
     def sensitivity(self):
         cm = self.confusion_matrix

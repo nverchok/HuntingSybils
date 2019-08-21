@@ -28,7 +28,7 @@ class Adversary:
 
 	
 	@staticmethod
-	def dissemination(nodes, comm_plan, simulated_conns, rate=0.7):
+	def dissemination(nodes, comm_plan, simulated_conns, rate=1.0):
 		""" Alters a set of connection results. Listening malicious nodes pool
 		their sets of seen keys. These sets are subsequently subsampled (excluding
 		adversarial indices) by all other adversarial nodes that were supposed

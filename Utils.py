@@ -44,6 +44,9 @@ class Node:
 				self.pos[i] = pos_data[i]
 			elif i != 0:
 				self.pos[i] = self.pos[i-1]
+		for i in range(Node.max_time+1):
+			if len(self.pos[i]) != 2:
+				print("{} {} {}".format(self.id, i, self.pos[i]))
 
 
 	def getPos(self, time, reported_pos=False):
@@ -159,45 +162,51 @@ class Utils:
 	
 
 	@staticmethod
-	def importNodes(file_name, node_type="hon"):
+	def importNodes_PatrickSim(file_name, node_type="hon"):
 		f = open(file_name, "r")
 		node_data = {}
 		time = 0
 		max_time = 0
+		dim = {"xmin":0,"xmax":0,"ymin":0,"ymax":0}
 		for l in f.readlines():
 			if l[0:2] == "T=":
-				time = int(l[3:])
+				time = int(l[3:])//2
 				if time > max_time:
 					max_time = time
 			elif l[0:2] == "ID":
 				entry = l.split(":")
 				node_id = int(entry[1][1:-2])
-				node_x = int(entry[2][1:-2])
-				node_y = int(entry[3][1:-5])
+				node_x = float(entry[2][1:-2])/2
+				node_y = float(entry[3][1:-5])/2
+				dim["xmin"] = min(dim["xmin"], node_x)
+				dim["xmax"] = max(dim["xmax"], node_x)
+				dim["ymin"] = min(dim["ymin"], node_y)
+				dim["ymax"] = max(dim["ymax"], node_y)
 				if node_id not in node_data:
 					node_data[node_id] = {}
 				node_data[node_id][time] = (node_x,node_y)
 		f.close()
 		Node.setMaxTime(max_time)
 		nodes_temp = []
-		id_to_idx = {}
 		for node_id in node_data.keys():
 			new_node = Node(node_id, node_data[node_id], node_type=node_type)
-			id_to_idx[node_id] = len(nodes_temp)
 			nodes_temp += [new_node]
 		nodes = np.array(nodes_temp)
-		return nodes, id_to_idx
+		return nodes, dim
 	
 
 	@staticmethod
-	def importNodes2(file_name, node_type="hon", id_offset=0):
+	def importNodes(file_name):
 		f = open(file_name, "r")
 		node_data = {}
 		max_time = 0
-		for l in f.readlines():
+		lines = f.readlines()
+		node_summary = [entry.split(":") for entry in lines[0].split(",")[:-1]]
+		node_types = {int(entry[0]):entry[1] for entry in node_summary}
+		for l in lines[1:]:
 			line = l.split(",")
 			time = int(line[0])
-			node_id = int(line[1]) + id_offset
+			node_id = int(line[1])
 			node_x = float(line[2])
 			node_y = float(line[3])
 			if node_id not in node_data:
@@ -208,29 +217,26 @@ class Utils:
 		f.close()
 		Node.setMaxTime(max_time)
 		nodes_temp = []
-		id_to_idx = {}
 		for node_id in node_data.keys():
-			new_node = Node(node_id, node_data[node_id], node_type=node_type)
-			id_to_idx[node_id] = len(nodes_temp)
+			new_node = Node(node_id, node_data[node_id], node_type=node_types[node_id])
 			nodes_temp += [new_node]
 		nodes = np.array(nodes_temp)
-		return nodes, id_to_idx
-
+		return nodes
+	
 
 	@staticmethod
-	def getLocValSet(original_nodes, time, center, radius):
-		""" Returns an array of nodes to be involved in a location validation 
-		procedure, and a mapping from node.id to the index in this list (or -1 
-		indicating absence). Membership is determined by euclidean proximity
-		from the center at start time, based on *last reported* location. """
-		nodes_temp = []
-		cx, cy = center
-		for node in original_nodes:
-			nx, ny = node.getPos(time, reported_pos=True)
-			if (nx-cx)**2 + (ny-cy)**2 <= radius**2:
-				nodes_temp += [node]
-		nodes = np.array(nodes_temp)
-		return nodes
+	def exportNodes(nodes, file_name):
+		f = open(file_name, "w+")
+		node_summary = ""
+		for node in nodes:
+			node_summary += "{}:{},".format(node.id,node.type)
+		node_summary += "\n"
+		f.write(node_summary)
+		for t in range(Node.max_time):
+			for node in nodes:
+				pos = node.getPos(t)
+				f.write("{},{},{},{}\n".format(t, node.id, pos[0], pos[1]))
+		f.close()
 
 
 	@staticmethod
@@ -261,91 +267,3 @@ class Utils:
 		sd1 = (sum(list(map(lambda x: (x-m1)**2, L[0])))/NN)**0.5
 		sd2 = (sum(list(map(lambda x: (x-m2)**2, L[1])))/NN)**0.5
 		return "%1.3f,%1.3f,%1.3f,%1.3f" % (m1, sd1, m2, sd2)
-
-
-	@staticmethod
-	def createSyPyNetwork(nodes_val, id_to_edges):
-		""" Converts a given simulation into a SyPy-friendly 'network' object 
-		that allows utilizing other (GSD-based) detection algorithms. First,
-		finds the largest connected component. Then, creates a graph out of the
-		bidirectional edges and corresponding nodes. """
-		# num_nodes = len(nodes)
-		# succ_edges = {}
-		# bidir_edges = []
-		# for i in range(num_nodes):
-		# 	for edge in edge_lists[i]:
-		# 		if edge.successful:
-		# 			src_idx = id_to_idx[edge.node_src.id]
-		# 			dst_idx = id_to_idx[edge.node_dst.id]
-		# 			if (dst_idx,src_idx) in succ_edges:
-		# 				bidir_edges += [(dst_idx,src_idx)]
-		# 			else:
-		# 				succ_edges[(src_idx,dst_idx)] = True
-		# nx_graph = nx.Graph()
-		# nx_graph.add_nodes_from([i for i in range(num_nodes)])
-		# nx_graph.add_edges_from(bidir_edges)
-		# cc_graph = max(nx.connected_component_subgraphs(nx_graph), key=len)
-		# cc_nodes = cc_graph.nodes()
-		# cc_edges = []
-		# for edge in bidir_edges:
-		# 	if edge[0] in cc_nodes and edge[1] in cc_nodes:
-		# 		cc_edges += [edge]
-		# nx_graph = nx.Graph()
-		# nx_graph.add_nodes_from(cc_nodes)
-		# nx_graph.add_edges_from(cc_edges)
-		# initial_sybils = list(set(range(len(nodes)))-set(cc_nodes))
-		# honest_edge_counts = {}
-		# for i in cc_nodes:
-		# 	honest_edge_counts[i] = 0
-		# for edge in cc_edges:
-		# 	if nodes[edge[0]].type == "hon" and nodes[edge[1]].type == "hon":
-		# 		honest_edge_counts[edge[0]] += 1
-		# 		honest_edge_counts[edge[1]] += 1
-		# known_honests = [sorted(honest_edge_counts.items(), key=lambda kv: kv[1], reverse=True)[0][0]]
-		# original_nodes = [i for i in range(num_nodes)]
-		# true_syb_idxs = [i for i in range(num_nodes) if nodes[i].type == "syb"]
-		# true_mal_idxs = [i for i in range(num_nodes) if nodes[i].type == "mal"]
-		# network = sypy.Network(None, None, "test", custom_graph=sypy.CustomGraph(nx_graph))
-		# network.set_data(original_nodes=original_nodes, sybils=true_syb_idxs, malicious=true_mal_idxs, known_honests=known_honests, initial_sybils=initial_sybils)
-		# return network
-
-
-		all_ids = {node.id for node in nodes_val}
-		hon_ids = {node.id for node in nodes_val if node.type == "hon"}
-		syb_ids = [node.id for node in nodes_val if node.type == "syb"]
-		mal_ids = [node.id for node in nodes_val if node.type == "mal"]
-		succ_edges = set()
-		bidir_edges = []
-		for node_id in all_ids:
-			for edge in id_to_edges[node_id]:
-				if edge.successful:
-					src_id = edge.node_src.id
-					dst_id = edge.node_dst.id
-					if (dst_id,src_id) in succ_edges:
-						bidir_edges += [(dst_id,src_id)]
-					else:
-						succ_edges.add((src_id,dst_id))
-		nx_graph = nx.Graph()
-		nx_graph.add_nodes_from(all_ids)
-		nx_graph.add_edges_from(bidir_edges)
-		cc_graph = max(nx.connected_component_subgraphs(nx_graph), key=len)
-		cc_nodes = cc_graph.nodes()
-		cc_edges = []
-		for edge in bidir_edges:
-			if edge[0] in cc_nodes and edge[1] in cc_nodes:
-				cc_edges += [edge]
-		nx_graph = nx.Graph()
-		nx_graph.add_nodes_from(cc_nodes)
-		nx_graph.add_edges_from(cc_edges)
-		initial_sybils = list(set(all_ids)-set(cc_nodes))
-		honest_edge_counts = {node_id:0 for node_id in cc_nodes}
-		for edge in cc_edges:
-			if edge[0] in hon_ids and edge[1] in hon_ids:
-				honest_edge_counts[edge[0]] += 1
-				honest_edge_counts[edge[1]] += 1
-		known_honests = [sorted(honest_edge_counts.items(), key=lambda kv: kv[1], reverse=True)[0][0]]
-		network = sypy.Network(None, None, "test", custom_graph=sypy.CustomGraph(nx_graph))
-		network.set_data(original_nodes=all_ids, sybils=syb_ids, malicious=mal_ids, known_honests=known_honests, initial_sybils=initial_sybils)
-		return network
-
-
