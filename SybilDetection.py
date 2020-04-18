@@ -112,7 +112,6 @@ class SybilDetection:
 			det_results["init_syb_ids"] = sypy_results.initial_sybils
 			results[D_SIMP] = det_results
 			
-		
 		if D_ITER in active_detectors:
 			det_results = {}
 			pred_syb_ids, pvals = GraphAnalysis.iterativeSybilDetection(nodes_val, id_to_edges)
@@ -183,4 +182,16 @@ class SybilDetection:
 			det_results["init_syb_ids"] = sypy_results.initial_sybils
 			results[D_LHCO] = det_results
 			
+		return results
+
+
+	@staticmethod
+	def createDummyResults(nodes_val):
+		det_results = {}
+		det_results["res_sypy"] = []
+		det_results["res_string"] = "None"
+		det_results["id_to_pval"] = {}
+		det_results["id_to_type"] = {node.id:"non-sybil" for node in nodes_val}
+		det_results["init_syb_ids"] = {}
+		results = {"Dummy Detector": det_results}
 		return results

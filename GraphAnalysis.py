@@ -9,8 +9,8 @@ class GraphAnalysis:
 	model for P2P connection success as a function of pairwise distance. """
 	simp_det_thresh = 1/3500000
 	iter_det_thresh = 1/100000
-	pdf_dist_max = 100
-	pdf_dist_inc = 5
+	lhc_dist_max = 90
+	lhc_dist_inc = 5
 	base_dist_prob_fun = lambda dist: np.interp(
 		dist, 
 		[(25*i - 12.5) for i in range(13)], 
@@ -53,12 +53,12 @@ class GraphAnalysis:
 
 	@staticmethod
 	def calcNodeLHCurve(edges, ignored_ids=set()):
-		""" Calculates an observed pdf for a given edge set (presumably from a
-		single node) by keeping track of the interval ratio of successful over
-		potential connections over increasing distance. Returns lists of x-vals
-		and y-vals, ready for plotting. """
-		DIST_MAX = GraphAnalysis.pdf_dist_max
-		DIST_INC = GraphAnalysis.pdf_dist_inc
+		""" Calculates an observed likelihood curve for a given edge set (presumably 
+		from a single node) by keeping track of the interval ratio of successful over
+		potential connections over increasing distance. Returns lists of x-vals and 
+		y-vals, ready for plotting. """
+		DIST_MAX = GraphAnalysis.lhc_dist_max
+		DIST_INC = GraphAnalysis.lhc_dist_inc
 		x = np.array([(i+1)*DIST_INC for i in range(DIST_MAX//DIST_INC)])
 		y = np.zeros(DIST_MAX//DIST_INC)
 		sorted_edges = sorted(edges, key=lambda edge: edge.dist)
@@ -87,12 +87,12 @@ class GraphAnalysis:
 	def calcGlobalLHCurves(id_to_node, id_to_edges):
 		""" Runs a series of RANSAC computations for every discritized distance.
 		Also records the nodes that become outliers in each of these computations. """
-		DIST_MAX = GraphAnalysis.pdf_dist_max
-		DIST_INC = GraphAnalysis.pdf_dist_inc
+		DIST_MAX = GraphAnalysis.lhc_dist_max
+		DIST_INC = GraphAnalysis.lhc_dist_inc
 		X = np.array([(i+1)*DIST_INC for i in range(DIST_MAX//DIST_INC)])
 		Ys = {}
 		for node_id, edges in id_to_edges.items():
-			x, y = GraphAnalysis.calcNodePDF(edges)
+			x, y = GraphAnalysis.calcNodeLHCurve(edges)
 			Ys[node_id] = y
 		Ys_t = np.array(list(Ys.values())).transpose()
 		outliers = {}
@@ -113,8 +113,8 @@ class GraphAnalysis:
 					if not reg.inlier_mask_[j]:
 						node = id_to_node[list(id_to_edges.keys())[j]]
 						outliers[i][node.id] = (node.type, "{:.3f}".format(Y_reg[j]))#, reg.inlier_mask_[i])
-				print("\n{}:".format((i+1)*DIST_INC))
-				pprint.pprint(outliers[i])
+				# print("\n{}:".format((i+1)*DIST_INC))
+				# pprint.pprint(outliers[i])
 			except ValueError:
 				print("ransac failed on {}".format((i+1)*DIST_INC))
 				sorted_Y_reg = sorted(Y_reg)
@@ -170,12 +170,12 @@ class GraphAnalysis:
 	
 
 	@staticmethod
-	def __getSusLHCurves__(nodes, id_to_edges, max_runs=10):
+	def __getSusLHCurves__(nodes, id_to_edges, max_runs=5):
 		""" Wip stuff. Supposed to be a likelihood-outlier-based detection algorithm 
 		that first calculates the observed (discritized) likelihood curve of connection 
 		success based on distance for each node, and then find the outlier nodes. """
-		DIST_MAX = GraphAnalysis.pdf_dist_max
-		DIST_INC = GraphAnalysis.pdf_dist_inc
+		DIST_MAX = GraphAnalysis.lhc_dist_max
+		DIST_INC = GraphAnalysis.lhc_dist_inc
 		id_to_node = {node.id:node for node in nodes}
 
 		run = 0
@@ -232,7 +232,7 @@ class GraphAnalysis:
 	
 
 	@staticmethod
-	def likelihoodSybilDetection(nodes, id_to_edges, N=7):
+	def likelihoodSybilDetection(nodes, id_to_edges, N=5):
 		""" More wip stuff. """
 		syb_ids_counts = {node.id:0 for node in nodes}
 		for t in range(N):

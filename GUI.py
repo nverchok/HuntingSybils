@@ -37,6 +37,11 @@ class GUI:
 		"syb": matplotlib.cm.Reds,
 		"mal": matplotlib.cm.autumn
 	}
+	col_plot_mks = {
+		"hon": "_",
+		"syb": ".",
+		"mal": "+"
+	}
 	dim_node_rad = 0.38
 	dim_node_rad_h = 0.55
 	dim_node_lw = 1.5
@@ -77,7 +82,7 @@ class GUI:
 		self.gra_figs = {}
 		self.gra_axes = {}
 		self.gra_objs = {}
-		self.gra_rcol = 0
+		self.gra_rcol = 60
 		self.gra_idx = 1
 	
 
@@ -102,9 +107,9 @@ class GUI:
 			return self.__getNodeFillColor__(node_id)
 
 	
-	def __getArrowColor__(self, edge):
-		""" Returns the color of an arrow (i.e. edge; connection success). """
-		return "green" if edge.successful else "red"
+	def __getArrowAttr__(self, edge):
+		""" Returns the color (and linestyle) of an arrow (i.e. edge; connection success). """
+		return ("green", "-", 0.2) if edge.successful else ("red", ":", 1.2)
 	
 
 	def __getNodePval__(self, node_id):
@@ -139,16 +144,16 @@ class GUI:
 		return fig, ax, objs
 	
 
-	def __getPlotColor__(self, node_id):
+	def __getPlotColor__(self, node_type):
 		""" Returns the color to use for plotting a scatterplot for a given node.
-		Sybil nodes use warm colors (yellow/orange/red) while none-Sybils (i.e.
+		Sybil nodes use warm colors (yellow/orange/red) while non-Sybils (i.e.
 		honest and malicious nodes) use cool colors (green/blue). """
-		node_type = self.id_to_node[node_id].type
+		mk = GUI.col_plot_mks[node_type]
 		color = GUI.col_plot_cmaps[node_type](self.gra_rcol)
-		self.gra_rcol = (self.gra_rcol + 71) % 256
-		while self.gra_rcol < 128:
-			self.gra_rcol = (self.gra_rcol + 71) % 256
-		return color
+		# self.gra_rcol = (self.gra_rcol + 71) % 256
+		# while self.gra_rcol < 128:
+		# 	self.gra_rcol = (self.gra_rcol + 71) % 256
+		return color, mk
 
 
 	def addLocVal(self, val_label, graph_gen, id_to_edges, results):
@@ -170,15 +175,18 @@ class GUI:
 		return
 
 	
-	def plotLHCurves(self, X, Ys, Y_RANSAC=None, fig_idx=0):
+	def plotLHCurves(self, X, Ys, Y_RANSAC=None, fig_idx=0, n_type=None, title=None):
 		""" Creates a standalone plotting area (corresponding to the fig_idx) and
 		scatter-plots all curves from the Ys list. Also line-plots the Y_RANSAC
 		curve if such is provided. """
-		fig, ax, objs = self.__getFigData__(fig_idx)
+		fig, ax, objs = self.__getFigData__(fig_idx)	
+		if title != None:
+			fig.suptitle(title)
 		for node_id, y in Ys.items():
 			if node_id not in objs:
-				color = self.__getPlotColor__(node_id)
-				objs[node_id] = ax.scatter(X, y, label=(None if Y_RANSAC else node_id), color=color, marker='_')
+				node_type = n_type if n_type != None else self.id_to_node[node_id].type
+				color, mk = self.__getPlotColor__(node_type)
+				objs[node_id] = ax.scatter(X, y, label=(None if Y_RANSAC else node_id), color=color, marker=mk)
 			else:
 				artist_list = objs.pop(node_id)
 				for artist in artist_list:
@@ -266,6 +274,8 @@ class GUI:
 			X, Y = GraphAnalysis.calcNodeLHCurve(id_to_edges[node_id])
 			Ys = {node_id:Y}
 			Y_RANSAC = None
+			self.gra_idx += 1
+			self.plotLHCurves(X, Ys, Y_RANSAC=Y_RANSAC, fig_idx=self.gra_idx)
 
 			x, Ys, Y_RANSAC = GraphAnalysis.calcGlobalLHCurves(self.id_to_node, id_to_edges)
 			self.gra_idx += 1
@@ -282,17 +292,20 @@ class GUI:
 				for edge in edges:
 					pos1 = edge.node_src.getPos(edge.time, reported_pos=self.gfx["options_use_rep_loc"])
 					pos2 = edge.node_dst.getPos(edge.time, reported_pos=self.gfx["options_use_rep_loc"])
+					# pos1 = edge.node_src.getPos(self.curr_time, reported_pos=False) # all arrows
+					# pos2 = edge.node_dst.getPos(self.curr_time, reported_pos=False) # all arrows
 					x = pos2[0]
 					y = pos2[1]
 					dx = pos1[0]-pos2[0] if pos1[0]-pos2[0]!=0 else 0.01
 					dy = pos1[1]-pos2[1] if pos1[1]-pos2[1]!=0 else 0.01
-					col = self.__getArrowColor__(edge)
+					col, ls, lw = self.__getArrowAttr__(edge)
 					arrow_gfx = self.ax.arrow(
 						x, y, dx, dy, 
 						color=col, 
+						linestyle=ls,
 						visible=False, 
 						zorder=2, 
-						linewidth=0.2, 
+						linewidth=lw, 
 						head_width=0, 
 						length_includes_head=True)
 					arrow_gfx.set_url(edge.time)
@@ -337,6 +350,9 @@ class GUI:
 			arrow_time = float(arrow_gfx.get_url())
 			if not arrow_visible:
 				arrow_gfx.set_visible(False)
+			# else:							# all arrows
+			# 	arrow_gfx.set_alpha(1)		# all arrows
+			# 	arrow_gfx.set_visible(True)	# all arrows
 			elif arrow_time > self.curr_time:
 				arrow_gfx.set_visible(False)
 			elif arrow_time + GUI.cfg_fade_time < self.curr_time:
@@ -437,6 +453,8 @@ class GUI:
 			self.gfx["id_to_arrows_gfx"] = {}
 			new_det_list = self.curr_val_data["detectors"]
 			__updateDetectorList__(new_det_list)
+			# self.gfx["val_circle"].set_visible(False)		# all nodes
+			# self.gfx["val_time_text"].set_visible(False)	# all nodes
 			return
 
 		

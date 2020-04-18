@@ -16,7 +16,7 @@ class GraphGen:
 	simu_dist_prob_fun = lambda dist: np.interp(
 		dist, 
 		[(25*i - 12.5) for i in range(13)], 
-		[1.000, 0.800, 0.650, 0.900, 0.354, 0.258, 0.196, 0.142, 0.092, 0.058, 0.042, 0.021, 0.017], 
+		[1.000, 0.800, 0.650, 0.500, 0.354, 0.258, 0.196, 0.142, 0.092, 0.058, 0.042, 0.021, 0.017], 
 		left=0.95, 
 		right=0.01)
 
@@ -91,7 +91,8 @@ class GraphGen:
 		according to the node types and separating distance at the *true* time. """
 		dist = Node.getDist(node1, node2, time, reported_pos=False)
 		prob = GraphGen.simu_dist_prob_fun(dist)
-		return np.random.random() <= prob * self.conn_prob_mult[(node1.type,node2.type)]
+		success = np.random.random() <= prob * self.conn_prob_mult[(node1.type,node2.type)]
+		return success
 	
 
 	def genCommPlan(self):
@@ -174,8 +175,42 @@ class GraphGen:
 						num_attempts[(i,j)] = 1
 					else:
 						num_attempts[(i,j)] += 1
+					
 					if num_attempts[(i,j)] <= max_attempts:
 						node_dst = self.nodes_val[j]
 						successful = j in node_simu_conns
 						id_to_edges[node_dst.id] += [Edge(node_src, node_dst, time, successful)]
 		return id_to_edges
+	
+
+	def genCommPlan_customBroadcasters(self, broadcasters):
+		""" Generate a communication plan, returning a 2D array of #nodes*#rounds. 
+		Each entry is either "listen" or a unique key, created by a KeyGen object
+		In every round, a node either listens or broadcasts its key. """
+		if self.num_nodes < 2:
+			return None, None, None
+		comm_plan = np.full((self.num_nodes, self.num_rounds), "_done_")
+		key_to_idx = {}
+		self.keygen = KeyGen()
+		self.__recGenStates__(comm_plan, 0, 0, self.num_nodes)
+		np.random.shuffle(comm_plan)
+		potential_conns = np.ndarray((self.num_nodes, self.num_rounds), dtype=object)
+		for rnd in range(self.num_rounds):
+			for (node_idx,key) in broadcasters.items():
+				comm_plan[node_idx,rnd] = key
+		for rnd in range(self.num_rounds):
+			listener_set = []
+			bdcaster_set = []
+			for i in range(self.num_nodes):
+				potential_conns[i,rnd] = []
+				if comm_plan[i,rnd] != "_done_":
+					if comm_plan[i,rnd] == "listen":
+						listener_set += [i]
+					else:
+						bdcaster_set += [i]
+			for i in listener_set:
+				for j in bdcaster_set:
+					bdcaster_key = comm_plan[j,rnd]
+					potential_conns[i,rnd] += [bdcaster_key]
+					key_to_idx[bdcaster_key] = j
+		return comm_plan, key_to_idx, potential_conns

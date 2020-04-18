@@ -159,16 +159,59 @@ class Utils:
 	obtaining a set of location validation participants, for processing tuples
 	(used in evaluating detection results), and for forming a SyPy-friendly 
 	'network' object used by other detection algorithms. """
-	
+
 
 	@staticmethod
 	def importNodes_PatrickSim(file_name, node_type="hon"):
 		f = open(file_name, "r")
 		node_data = {}
 		time = 0
+		dim = {"xmin":0,"xmax":0,"ymin":0,"ymax":0}
+		
+		locs = f.readline().strip().split(",")
+		num_nodes = len(locs)//2
+		for i in range(num_nodes):
+			node_id = i
+			node_x = int(locs[2*i])
+			node_y = int(locs[2*i+1])
+			node_data[node_id] = {time: (node_x,node_y)}
+			dim["xmin"] = min(dim["xmin"], node_x)
+			dim["xmax"] = max(dim["xmax"], node_x)
+			dim["ymin"] = min(dim["ymin"], node_y)
+			dim["ymax"] = max(dim["ymax"], node_y)
+
+		for l in f:
+			locs = l.strip().split(",")
+			if len(locs)//2 != num_nodes: continue
+			time += 1
+			for i in range(num_nodes):
+				node_id = i
+				node_x = int(locs[2*i])
+				node_y = int(locs[2*i+1])
+				node_data[node_id][time] = (node_x,node_y)
+				dim["xmin"] = min(dim["xmin"], node_x)
+				dim["xmax"] = max(dim["xmax"], node_x)
+				dim["ymin"] = min(dim["ymin"], node_y)
+				dim["ymax"] = max(dim["ymax"], node_y)
+
+		f.close()
+		Node.setMaxTime(time-1)
+		nodes_temp = []
+		for node_id in node_data.keys():
+			new_node = Node(node_id, node_data[node_id], node_type=node_type)
+			nodes_temp += [new_node]
+		nodes = np.array(nodes_temp)
+		return nodes, dim
+	
+
+	@staticmethod
+	def importNodes_PatrickSim_oldFormat(file_name, node_type="hon"):
+		f = open(file_name, "r")
+		node_data = {}
+		time = 0
 		max_time = 0
 		dim = {"xmin":0,"xmax":0,"ymin":0,"ymax":0}
-		for l in f.readlines():
+		for l in f:
 			if l[0:2] == "T=":
 				time = int(l[3:])//2
 				if time > max_time:
@@ -267,3 +310,14 @@ class Utils:
 		sd1 = (sum(list(map(lambda x: (x-m1)**2, L[0])))/NN)**0.5
 		sd2 = (sum(list(map(lambda x: (x-m2)**2, L[1])))/NN)**0.5
 		return "%1.3f,%1.3f,%1.3f,%1.3f" % (m1, sd1, m2, sd2)
+
+	
+	@staticmethod
+	def printEdges(file_name, id_to_edges):
+		""" Print edges to a csv file. """
+		f = open(file_name, "w+")
+		f.write("dst_id,src_id,distance,result,time\n")
+		for dst_id, edges in id_to_edges.items():
+			for edge in edges:
+				f.write("{},{},{},{},{}\n".format(	edge.node_dst.id, edge.node_src.id, edge.dist, edge.successful, edge.time))
+		f.close()
